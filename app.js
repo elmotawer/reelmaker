@@ -304,17 +304,35 @@ async function render(st, audioBuf, ctxA, music) {
     [110, 164.81, 220, 261.63, 329.63].forEach((f, k) => { const o = ctxA.createOscillator(); o.type = k % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = (k - 2) * 4; o.connect(mg); oscs.push(o); });
   }
   const stream = cv.captureStream(FPS); dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+  const pv = $('preview'); try { pv.srcObject = new MediaStream(stream.getVideoTracks()); pv.muted = true; pv.hidden = false; pv.play().catch(() => {}); } catch {}
   const mime = pickMime(), rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: dur > 150 ? 2.5e6 : 4e6 } : {}), chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const done = new Promise(r => rec.onstop = r);
   window.__dbg = { c, st, dur, cv }; rec.start(500); const t0 = ctxA.currentTime + 0.1; src.start(t0); oscs.forEach(o => { o.start(t0); o.stop(t0 + dur + 0.2); }); drawFrame(c, st, 0, dur);
-  let last = -1, stall = 0;
-  await new Promise((res, rej) => { (function tick() {
+  let last = -1, paused = false, lastT = -1, lastMove = performance.now(), finished = false;
+  const contBtn = $('cont');
+  const pauseRec = why => { if (paused) return; paused = true; try { rec.pause(); } catch {} try { ctxA.suspend(); } catch {} contBtn.hidden = false; status('⏸ ' + why + ' اضغط "متابعة التصوير" عشان نكمل من نفس المكان.'); };
+  const resumeRec = async () => {
+    try { await Promise.race([ctxA.resume(), sleep(3000)]); } catch {}
+    if (ctxA.state !== 'running') return status('الصوت لسه متوقف. اضغط "متابعة التصوير" تاني (ولازم الصفحة تكون ظاهرة والشاشة شغالة).');
+    try { rec.resume(); } catch {} paused = false; lastMove = performance.now(); contBtn.hidden = true; status('تمام، كملنا التصوير...');
+  };
+  contBtn.onclick = resumeRec;
+  const guard = setInterval(() => {
+    if (finished || paused) return;
+    if (document.hidden) pauseRec('الصفحة راحت في الخلفية أو الشاشة اتقفلت.');
+    else if (ctxA.state !== 'running') { try { ctxA.resume(); } catch {} setTimeout(() => { if (!finished && !paused && ctxA.state !== 'running') pauseRec('الصوت اتوقف من الموبايل.'); }, 1500); }
+    else if (performance.now() - lastMove > 3000) pauseRec('التصوير وقف (الموبايل بطّأ الصفحة).');
+  }, 700);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !finished) pauseRec('الصفحة راحت في الخلفية أو الشاشة اتقفلت.'); });
+  window.__ctx = ctxA;
+  await new Promise((res) => { (function tick() {
     const t = ctxA.currentTime - t0;
     if (t >= dur) return res();
-    if (t <= 0.01) { if (++stall > 180) return rej(new Error('الصوت متوقف على متصفحك. اضغط إنشاء الفيديو تاني وسيب الشاشة شغالة.')); } else stall = 0;
-    drawFrame(c, st, Math.max(0, t), dur); const pc = Math.round(100 * t / dur); if (pc !== last) { last = pc; status(`جاري التصوير ${pc}% (باقي ${fmt(dur - t)}) لا تقفل الشاشة`); }
+    if (t !== lastT) { lastT = t; lastMove = performance.now(); }
+    drawFrame(c, st, Math.max(0, t), dur); const pc = Math.round(100 * t / dur); if (!paused && pc !== last) { last = pc; status(`جاري التصوير ${pc}% (باقي ${fmt(dur - t)}) لا تقفل الشاشة`); }
     requestAnimationFrame(tick); })(); });
+  finished = true; clearInterval(guard); contBtn.hidden = true; try { $('preview').pause(); $('preview').srcObject = null; $('preview').hidden = true; } catch {}
   rec.stop(); await done;
   return new Blob(chunks, { type: (mime || 'video/webm').split(';')[0] });
 }
@@ -341,7 +359,7 @@ $('go').onclick = async () => {
     } else if (!store.get('gkey', '')) status('بدون مفتاح Gemini هيطلع فيديو تجريبي. أضف مفتاحك المجاني من الإعدادات.');
     const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
     W = $('orient').value === 'h' ? 1280 : 720; H = $('orient').value === 'h' ? 720 : 1280;
-    try { if (secs > 60 && navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch {}
+    try { if (navigator.wakeLock) { lock = await navigator.wakeLock.request('screen'); document.addEventListener('visibilitychange', async () => { if (!document.hidden && $('go').disabled && navigator.wakeLock) { try { lock = await navigator.wakeLock.request('screen'); } catch {} } }); } } catch {}
     status('جاري كتابة السيناريو...'); const s = await makeScript(idea, $('tone').value, nScenes);
     const st = { idea, scenes: s.scenes, imgs: s.imgs, emojis: s.emojis, theme: +$('theme').value, bitmaps: null, bounds: [] };
     const imgP = loadImages(st).catch(() => { st.bitmaps = st.scenes.map(() => null); });
