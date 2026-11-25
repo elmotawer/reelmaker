@@ -4,7 +4,7 @@ let W = 720, H = 1280; const FPS = 30;
 const VF_NUMBER = '01041920904';      // رقم فودافون كاش (مؤقت: يؤكده صاحب الموقع)
 const CONTACT_WA = '201041920904';    // واتساب للتواصل (مؤقت)
 const PAY_API = 'https://sawalef-server.onrender.com';
-const PRICES = { starter: 450, pro: 900, business: 1900 };
+const PRICES = { starter: 299, pro: 599, business: 1199 };
 const MAXSEC = { free: 60, starter: 300, pro: 600, business: 1800 };
 const PLAN_NAMES = { free: 'مجاني', starter: 'Starter', pro: 'Pro', business: 'Business' };
 const PLANS = { free: 3, starter: 20, pro: 40, business: 100 };
