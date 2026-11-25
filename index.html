@@ -50,10 +50,11 @@
       <select id="theme"><option value="0">بنفسجي</option><option value="1">أزرق</option><option value="2">برتقالي</option><option value="3">أخضر</option></select>
     </label>
   </div>
+  <label class="chk"><input id="music" type="checkbox" checked> موسيقى خلفية هادئة (مولّدة، بدون حقوق)</label>
   <div id="longWarn" class="warn" hidden></div>
   <button id="go" class="primary">إنشاء الفيديو</button>
-  <div id="usage" class="muted"></div>
   <div id="status" class="status" hidden></div>
+  <div id="usage" class="muted"></div>
 
   <div id="result" hidden>
     <video id="player" controls playsinline></video>
@@ -111,6 +112,7 @@
 
 <section id="settings" class="card">
   <h2>الإعدادات</h2>
+  <label id="pexWrap">مفتاح Pexels المجاني للصور (اختياري، من pexels.com/api) <input id="pexkey" type="password" dir="ltr" placeholder="اختياري"></label>
   <label id="gkeyWrap">مفتاح Gemini API (مجاني من aistudio.google.com/apikey، يُحفظ على جهازك فقط)
     <input id="gkey" type="password" dir="ltr" placeholder="AIza...">
   </label>

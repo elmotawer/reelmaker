@@ -19,3 +19,4 @@ video{width:100%;max-width:360px;display:block;margin:12px auto;border-radius:12
 .status.ok{border:1px solid #2e7d32;color:#9cff9c}.status.pend{border:1px solid #b8860b;color:#ffe08a}.status.bad{border:1px solid #c62828;color:#ff9c9c}
 optgroup{color:#000}
 [hidden]{display:none!important}
+.chk{display:flex;align-items:center;gap:8px;margin:8px 0}.chk input{width:auto}

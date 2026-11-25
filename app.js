@@ -27,7 +27,7 @@ function limit() { return paid() ? me.limit : PLANS.free; }
 function maxSecs() { return paid() ? me.maxSecs : MAXSEC.free; }
 function refreshUsage() {
   $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${limit()} | أقصى مدة: ${maxSecs() / 60} دقيقة`;
-  $('gkeyWrap').hidden = paid();
+  $('gkeyWrap').hidden = paid(); $('pexWrap').hidden = paid();
   $('acctIn').hidden = !me; $('acctOut').hidden = !!me;
   if (me) $('acctInfo').textContent = `${me.email} | الباقة: ${PLAN_NAMES[plan()]}` + (paid() ? ` | تنتهي ${new Date(me.planUntil).toLocaleDateString('ar-EG')}` : '');
   if (typeof updWarn === 'function') updWarn();
@@ -35,14 +35,14 @@ function refreshUsage() {
 
 // ---------- settings ----------
 function loadSettings() {
-  $('gkey').value = store.get('gkey', '');
+  $('gkey').value = store.get('gkey', ''); $('pexkey').value = store.get('pexkey', '');
   $('mtext').value = store.get('mtext', DEFAULTS.mtext);
   $('mtts').value = store.get('mtts', DEFAULTS.mtts);
   $('ytid').value = store.get('ytid', '');
   refreshUsage();
 }
 function doSave(manual) {
-  ['gkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const v = $(k).value.trim(); if (v) store.set(k, v); else { try { localStorage.removeItem(k); } catch {} } });
+  ['gkey', 'pexkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const v = $(k).value.trim(); if (v) store.set(k, v); else { try { localStorage.removeItem(k); } catch {} } });
   const ok = $('saved');
   if (ok) { ok.textContent = manual ? '✅ تم الحفظ' : '✅ تم الحفظ تلقائيا'; ok.hidden = false; clearTimeout(doSave.t); doSave.t = setTimeout(() => { ok.hidden = true; }, 4000); }
   if (manual) status('تم الحفظ');
@@ -51,11 +51,12 @@ function doSave(manual) {
   const b = $('save'); let last = 0;
   const fire = e => { if (e && e.cancelable) e.preventDefault(); const n = Date.now(); if (n - last < 400) return; last = n; doSave(true); };
   b.addEventListener('click', fire); b.addEventListener('touchend', fire);
-  ['gkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const el = $(k); el.addEventListener('input', () => doSave(false)); el.addEventListener('change', () => doSave(false)); el.addEventListener('blur', () => doSave(false)); });
+  ['gkey', 'pexkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const el = $(k); el.addEventListener('input', () => doSave(false)); el.addEventListener('change', () => doSave(false)); el.addEventListener('blur', () => doSave(false)); });
 })();
 
 
-function status(t) { const s = $('status'); s.hidden = false; s.textContent = t; }
+let statusScrolled = true;
+function status(t) { const s = $('status'); s.hidden = false; s.textContent = t; if (!statusScrolled) { statusScrolled = true; try { s.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} } }
 
 // ---------- Gemini ----------
 const TEXT_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
@@ -97,17 +98,20 @@ async function gemini(model, body, fallbacks) {
   }
   throw new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')');
 }
+const normScene = x => typeof x === 'string' ? { t: x, img: '', e: '✨' } : { t: String(x.t || x.text || ''), img: String(x.img || x.image || ''), e: String(x.e || x.emoji || '✨').slice(0, 4) };
 async function scriptChunk(idea, tone, n, prev, first, total) {
-  const ctxt = prev.length ? ` المشاهد السابقة (لا تكررها وكمّل من بعدها): ${prev.slice(-4).join(' | ')}.` : '';
+  const ctxt = prev.length ? ` المشاهد السابقة (لا تكررها وكمّل من بعدها): ${prev.slice(-4).map(x => x.t).join(' | ')}.` : '';
   const prompt = `اكتب ${first ? 'سيناريو' : 'تكملة سيناريو'} فيديو بالعربية الفصحى المبسطة أو بلهجة مفهومة للجميع. الفكرة: ${idea}. الأسلوب: ${tone}. ` +
     `إجمالي مشاهد الفيديو ${total}، المطلوب الآن ${n} مشهدا.${ctxt} كل مشهد جملتان قصيرتان على الأكثر (10 إلى 22 كلمة). ` +
     (first ? 'المشهد الأول خطاف قوي. ' : 'لا تضف خطافا جديدا. ') + (prev.length + n >= total ? 'المشهد الأخير دعوة للمتابعة. ' : 'لا تختم الفيديو بعد. ') +
-    `أرجع JSON فقط بالشكل: {"title":"عنوان قصير","description":"وصف مع 3 هاشتاجات","scenes":["..."]}`;
+    `لكل مشهد أضف "img": وصف بصري قصير بالإنجليزية (2 إلى 4 كلمات مفتاحية بسيطة وملموسة مثل: sunrise mountains، لا تستخدم أفكارا مجردة) للبحث عن صورة فوتوغرافية مناسبة للمشهد، و"e": إيموجي واحد مناسب. ` +
+    `أرجع JSON فقط بالشكل: {"title":"عنوان قصير","description":"وصف مع 3 هاشتاجات","scenes":[{"t":"نص المشهد","img":"sunrise mountains","e":"🌅"}]}`;
   const j = await gemini(store.get('mtext', DEFAULTS.mtext), {
     contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' }
   }, TEXT_FALLBACKS);
   const out = JSON.parse(j.candidates[0].content.parts.map(p => p.text || '').join(''));
   if (!out.scenes || !out.scenes.length) throw new Error('سيناريو فارغ');
+  out.scenes = out.scenes.map(normScene).filter(x => x.t);
   return out;
 }
 async function makeScript(idea, tone, scenes) {
@@ -119,15 +123,17 @@ async function makeScript(idea, tone, scenes) {
     let out, tries = 0;
     for (;;) { try { out = await scriptChunk(idea, tone, n, all, !head, scenes); break; } catch (e) { if (++tries >= 3) throw e; await sleep(3000 * tries); } }
     if (!head) head = out;
-    all = all.concat(out.scenes.map(String).slice(0, n + 3));
+    all = all.concat(out.scenes.slice(0, n + 3));
   }
-  return { title: head.title, description: head.description, scenes: all.slice(0, scenes) };
+  all = all.slice(0, scenes);
+  return { title: head.title, description: head.description, scenes: all.map(x => x.t), imgs: all.map(x => x.img || idea), emojis: all.map(x => x.e) };
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function demoScript(idea, n) {
   const base = ['هل تعلم أن فكرتك تستحق فيديو؟', idea, 'ابدأ بخطوة صغيرة اليوم', 'كن مستمرا ولا تتوقف', 'شارك الفيديو مع صديق يحتاجه', 'تابعنا للمزيد من الأفكار'];
-  const mid = base.slice(1, 5), sc = [base[0]]; while (sc.length < n - 1) sc.push(...mid); sc.length = Math.max(2, n - 1); sc.push(base[5]);
-  return { title: idea.slice(0, 60), description: idea + ' #shorts #عربي #أفكار', scenes: sc };
+  const em = ['🤔', '💡', '🚀', '💪', '🤝', '🔔'], mid = [1, 2, 3, 4], idx = [0];
+  while (idx.length < n - 1) idx.push(...mid); idx.length = Math.max(2, n - 1); idx.push(5);
+  return { title: idea.slice(0, 60), description: idea + ' #shorts #عربي #أفكار', scenes: idx.map(i => base[i]), imgs: idx.map(() => idea), emojis: idx.map(i => em[i]) };
 }
 async function makeAudio(text, voice, ctx) {
   if (!hasKey()) { // demo: soft tone, 2.3s per scene-ish
@@ -166,29 +172,112 @@ async function makeAudioLong(scenes, voice, ctx) {
 }
 
 // ---------- canvas drawing ----------
-function wrap(ctx, text, maxW) {
-  const words = text.split(/\s+/), lines = []; let cur = '';
-  for (const w of words) { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }
-  if (cur) lines.push(cur); return lines;
+// ---------- images (free: Pollinations AI, Wikimedia fallback, gradient+emoji last) ----------
+async function fetchImg(url, ms) {
+  const ac = new AbortController(), to = setTimeout(() => ac.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ac.signal }); if (!r.ok) throw new Error('img ' + r.status);
+    const b = await r.blob(); if (!/^image\//.test(b.type)) throw new Error('not image');
+    const im = new Image(); im.src = URL.createObjectURL(b); await im.decode(); return im;
+  } finally { clearTimeout(to); }
 }
-function drawFrame(ctx, scenes, bounds, t, total, theme, idx) {
-  let i = bounds.findIndex(b => t < b); if (i < 0) i = scenes.length - 1;
-  const start = i ? bounds[i - 1] : 0, p = (t - start) / (bounds[i] - start);
-  const [c1, c2] = THEMES[theme], a = (i % 2 ? 1 : -1);
-  const g = ctx.createLinearGradient(0, 0, W * (1 + 0.3 * Math.sin(i)), H); g.addColorStop(0, c1); g.addColorStop(1, c2);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = 0.12; ctx.fillStyle = '#fff';
-  for (let k = 0; k < 5; k++) { ctx.beginPath(); ctx.arc(W * ((k * 0.27 + i * 0.13 + a * p * 0.1) % 1), H * ((k * 0.19 + 0.1 + p * 0.08) % 1), 90 + k * 40, 0, 7); ctx.fill(); }
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(0, 0, W, 10); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W * t / total, 10);
-  ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = 'bold 60px Tahoma, Arial, sans-serif';
-  const lines = wrap(ctx, scenes[i], W - 120), lh = 90, y0 = H / 2 - (lines.length - 1) * lh / 2;
-  const sc = 0.92 + 0.08 * Math.min(1, p * 6); ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(sc, sc); ctx.translate(-W / 2, -H / 2);
-  ctx.globalAlpha = Math.min(1, 0.4 + p * 8);
-  lines.forEach((l, k) => { ctx.lineWidth = 10; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.strokeText(l, W / 2, y0 + k * lh); ctx.fillStyle = '#fff'; ctx.fillText(l, W / 2, y0 + k * lh); });
-  ctx.restore(); ctx.globalAlpha = 1;
-  ctx.font = '28px Tahoma, Arial'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.direction = "ltr"; ctx.fillText(`${i + 1} / ${scenes.length}`, W / 2, H - 80);
+const BAD_TITLE = /beer|wine|alcohol|vodka|whisk|cocktail|bikini|nude|naked|bar |pub |cigarette|smok|drunk|map|diagram|flag|logo|coat of arms|chart|graph|icon|symbol|poster|stamp|seal|portrait of|signature|scan|manuscript|\.svg/i;
+async function pexelsUrls(kw) {
+  const o = W > H ? 'landscape' : 'portrait';
+  if (paid()) {
+    const r = await fetch(PAY_API + '/reel/pexels?o=' + o + '&q=' + encodeURIComponent(kw), { headers: authH() });
+    if (!r.ok) return []; return ((await r.json()).photos || []).map(p => p.src);
+  }
+  const k = store.get('pexkey', ''); if (!k) return [];
+  const r = await fetch(`https://api.pexels.com/v1/search?per_page=6&orientation=${o}&query=${encodeURIComponent(kw)}`, { headers: { Authorization: k } });
+  if (!r.ok) return []; return ((await r.json()).photos || []).map(p => p.src && p.src.large).filter(Boolean);
+}
+async function wikiUrls(kw) {
+  const r = await (await fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(kw + ' filetype:bitmap')}&gsrnamespace=6&gsrlimit=12&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=1000&format=json&origin=*`)).json();
+  return Object.values((r.query || {}).pages || {}).filter(p => !BAD_TITLE.test(p.title || '')).map(p => p.imageinfo && p.imageinfo[0])
+    .filter(i => i && /jpeg/.test(i.mime) && i.thumburl && i.width >= 800 && i.height >= 500).map(i => i.thumburl);
+}
+async function getImage(kw, seed) {
+  kw = String(kw || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 5).join(' ');
+  const queries = [kw, kw.split(' ').slice(0, 2).join(' '), kw.split(' ')[0]].filter((q, i, a) => q && a.indexOf(q) === i);
+  for (const src of [pexelsUrls, wikiUrls]) {
+    for (const q of queries) {
+      try {
+        const urls = await src(q);
+        for (let k = 0; k < Math.min(3, urls.length); k++) { try { return await fetchImg(urls[(seed + k) % urls.length], 25000); } catch {} }
+      } catch {}
+    }
+  }
+  try { // last try: free AI image (limited to 1 image per 45s per IP, so often refused)
+    const pw = W > H ? 1024 : 576, ph = W > H ? 576 : 1024;
+    return await fetchImg(`https://image.pollinations.ai/prompt/${encodeURIComponent(kw + ', cinematic, no text')}?width=${pw}&height=${ph}&nologo=true&seed=${seed}`, 30000);
+  } catch {}
+  return null;
+}
+async function loadImages(st) {
+  const n = st.scenes.length, every = Math.max(1, Math.ceil(n / 24)), keys = [];
+  for (let i = 0; i < n; i += every) keys.push(i);
+  const got = {}; let done = 0, next = 0;
+  async function worker() { while (next < keys.length) { const k = keys[next++]; got[k] = await getImage(st.imgs[k] || st.idea, k + 1); status(`جاري تجهيز الصور... (${++done} من ${keys.length})`); } }
+  await Promise.all([worker(), worker()]);
+  st.bitmaps = st.scenes.map((_, i) => got[i - i % every] || null);
+  st.imgOk = st.bitmaps.filter(Boolean).length;
+}
+
+// ---------- canvas drawing: Ken Burns + crossfade + synced word captions ----------
+function sceneRange(st, i) { return [i ? st.bounds[i - 1] : 0, st.bounds[i]]; }
+function drawScene(c, st, i, p) {
+  const im = st.bitmaps && st.bitmaps[i];
+  if (im) {
+    const base = Math.max(W / im.naturalWidth, H / im.naturalHeight), dir = i % 2 ? 1 : -1;
+    const z = 1.06 + 0.14 * (i % 2 ? p : 1 - p), s = base * z, iw = im.naturalWidth * s, ih = im.naturalHeight * s;
+    const px = dir * (iw - W) * 0.35 * (p - 0.5), py = (i % 3 - 1) * (ih - H) * 0.25 * (p - 0.5);
+    c.drawImage(im, W / 2 - iw / 2 + px, H / 2 - ih / 2 + py, iw, ih);
+  } else {
+    const [c1, c2] = THEMES[st.theme], g = c.createLinearGradient(0, 0, W * (1 + 0.3 * Math.sin(i)), H); g.addColorStop(0, c1); g.addColorStop(1, c2);
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.globalAlpha = 0.12; c.fillStyle = '#fff';
+    for (let k = 0; k < 5; k++) { c.beginPath(); c.arc(W * ((k * 0.27 + i * 0.13 + p * 0.1) % 1), H * ((k * 0.19 + 0.1 + p * 0.08) % 1), 90 + k * 40, 0, 7); c.fill(); }
+    c.globalAlpha = 1; c.font = `${Math.min(W, H) * 0.3}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.direction = 'ltr';
+    c.save(); c.translate(W / 2, H * 0.35 + Math.sin(p * 6) * 14); c.scale(1 + 0.08 * p, 1 + 0.08 * p); c.fillText((st.emojis && st.emojis[i]) || '✨', 0, 0); c.restore();
+  }
+}
+function drawCaption(c, st, i, t) {
+  const [s0, s1] = sceneRange(st, i), text = st.scenes[i], words = text.split(/\s+/).filter(Boolean);
+  const fs = Math.round(Math.min(W, H) * (W > H ? 0.075 : 0.08)), lh = fs * 1.5, maxW = W * 0.88;
+  c.font = `bold ${fs}px Tahoma, Arial, sans-serif`; c.direction = 'rtl'; c.textBaseline = 'middle'; c.textAlign = 'right';
+  const sp = c.measureText(' ').width, ww = words.map(w => c.measureText(w).width);
+  const lines = []; let cur = [], cw = 0;
+  words.forEach((w, k) => { const add = ww[k] + (cur.length ? sp : 0); if (cw + add > maxW && cur.length) { lines.push(cur); cur = []; cw = 0; } cw += ww[k] + (cur.length ? sp : 0); cur.push(k); });
+  if (cur.length) lines.push(cur);
+  const tot = words.reduce((a, w) => a + w.length + 1, 0), a0 = s0 + 0.1, a1 = Math.max(a0 + 0.3, s1 - 0.15); let acc = 0;
+  const starts = words.map(w => { const v = acc; acc += w.length + 1; return a0 + (a1 - a0) * v / tot; });
+  let cwi = 0; starts.forEach((v, k) => { if (t >= v) cwi = k; });
+  const blockH = lines.length * lh, y0 = (W > H ? H * 0.80 : H * 0.70) - blockH / 2 + lh / 2;
+  const g = c.createLinearGradient(0, y0 - lh * 1.5, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.6)'); c.fillStyle = g; c.fillRect(0, y0 - lh * 1.5, W, H - y0 + lh * 1.5);
+  const pop = Math.min(1, (t - starts[cwi]) * 8);
+  lines.forEach((ln, li) => {
+    const lw = ln.reduce((a, k) => a + ww[k], 0) + sp * (ln.length - 1); let x = W / 2 + lw / 2; const y = y0 + li * lh;
+    ln.forEach(k => {
+      const cur = k === cwi, past = k < cwi;
+      c.save(); if (cur) { c.translate(x - ww[k] / 2, y); c.scale(1 + 0.12 * (1 - pop) + 0.06, 1 + 0.12 * (1 - pop) + 0.06); c.translate(-(x - ww[k] / 2), -y); }
+      c.lineWidth = fs * 0.2; c.lineJoin = 'round'; c.strokeStyle = 'rgba(0,0,0,.8)'; c.strokeText(words[k], x, y);
+      c.fillStyle = cur ? '#ffd740' : past ? '#ffffff' : 'rgba(255,255,255,.62)'; c.fillText(words[k], x, y); c.restore();
+      x -= ww[k] + sp;
+    });
+  });
+}
+function drawFrame(c, st, t, total) {
+  const n = st.scenes.length; let i = st.bounds.findIndex(b => t < b); if (i < 0) i = n - 1;
+  const [s0, s1] = sceneRange(st, i), p = Math.max(0, Math.min(1, (t - s0) / (s1 - s0)));
+  c.globalAlpha = 1; drawScene(c, st, i, p);
+  const fade = 0.4;
+  if (i > 0 && t - s0 < fade) { /* new scene fades in over the previous one */
+    const q = (t - s0) / fade; c.globalAlpha = 1; c.save(); drawScene(c, st, i - 1, 1); c.restore();
+    c.globalAlpha = q; drawScene(c, st, i, p); c.globalAlpha = 1;
+  }
+  c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(0, 0, W, 10); c.fillStyle = '#fff'; c.fillRect(0, 0, W * t / total, 10);
+  drawCaption(c, st, i, t);
 }
 
 // ---------- render to video (in browser) ----------
@@ -196,53 +285,76 @@ function pickMime() {
   const c = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 }
-async function render(scenes, audioBuf, ctxA, theme, bounds) {
+async function render(st, audioBuf, ctxA, music) {
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
   const dur = audioBuf.duration + 0.6;
   const dest = ctxA.createMediaStreamDestination(), src = ctxA.createBufferSource(); src.buffer = audioBuf; src.connect(dest);
+  let oscs = [];
+  if (music) { // royalty-free synthesized ambient pad (no external music used)
+    const mg = ctxA.createGain(); mg.gain.value = 0.035; mg.connect(dest);
+    const lfo = ctxA.createOscillator(), lg = ctxA.createGain(); lfo.frequency.value = 0.15; lg.gain.value = 0.015; lfo.connect(lg); lg.connect(mg.gain); oscs.push(lfo);
+    [110, 164.81, 220, 261.63, 329.63].forEach((f, k) => { const o = ctxA.createOscillator(); o.type = k % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = (k - 2) * 4; o.connect(mg); oscs.push(o); });
+  }
   const stream = cv.captureStream(FPS); dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
   const mime = pickMime(), rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: dur > 150 ? 2.5e6 : 4e6 } : {}), chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const done = new Promise(r => rec.onstop = r);
-  rec.start(500); const t0 = ctxA.currentTime + 0.1; src.start(t0); drawFrame(c, scenes, bounds, 0, dur, theme);
-  await new Promise(res => { (function tick() { const t = ctxA.currentTime - t0; if (t >= dur) return res(); drawFrame(c, scenes, bounds, Math.max(0, t), dur, theme); status(`جاري التصوير ${Math.round(100 * t / dur)}% (باقي ${fmt(dur - t)}) لا تقفل الشاشة`); requestAnimationFrame(tick); })(); });
+  window.__dbg = { c, st, dur, cv }; rec.start(500); const t0 = ctxA.currentTime + 0.1; src.start(t0); oscs.forEach(o => { o.start(t0); o.stop(t0 + dur + 0.2); }); drawFrame(c, st, 0, dur);
+  let last = -1, stall = 0;
+  await new Promise((res, rej) => { (function tick() {
+    const t = ctxA.currentTime - t0;
+    if (t >= dur) return res();
+    if (t <= 0.01) { if (++stall > 180) return rej(new Error('الصوت متوقف على متصفحك. اضغط إنشاء الفيديو تاني وسيب الشاشة شغالة.')); } else stall = 0;
+    drawFrame(c, st, Math.max(0, t), dur); const pc = Math.round(100 * t / dur); if (pc !== last) { last = pc; status(`جاري التصوير ${pc}% (باقي ${fmt(dur - t)}) لا تقفل الشاشة`); }
+    requestAnimationFrame(tick); })(); });
   rec.stop(); await done;
   return new Blob(chunks, { type: (mime || 'video/webm').split(';')[0] });
 }
-
 const fmt = x => { x = Math.max(0, Math.round(x)); return Math.floor(x / 60) + ':' + String(x % 60).padStart(2, '0'); };
 // ---------- main flow ----------
 $('go').onclick = async () => {
+  let ctxA = null;
+  try { ctxA = new (window.AudioContext || window.webkitAudioContext)(); if (ctxA.resume) ctxA.resume(); } catch {}
+  statusScrolled = false; status('تم الضغط... جاري التجهيز');
+  if (!ctxA) return status('خطأ: متصفحك لا يدعم الصوت المطلوب. جرّب Safari أو Chrome حديث.');
   const idea = $('idea').value.trim(); if (!idea) return status('اكتب الفكرة أولا');
   if (used() >= limit()) return status('وصلت للحد الشهري للباقة. اختر باقة أعلى من قسم الباقات.');
   const secs = getSecs();
   if (secs > maxSecs()) return status(`باقتك (${PLAN_NAMES[plan()]}) تسمح بفيديو حتى ${maxSecs() / 60} دقيقة. اختر مدة أقصر أو باقة أعلى.`);
-  if (paid()) {
-    try {
-      const r = await fetch(PAY_API + '/reel/start', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.get('tok', '') }, body: JSON.stringify({ secs }) });
-      const j = await r.json();
-      if (!r.ok) return status(j.error === 'monthly_limit' ? 'وصلت للحد الشهري للباقة.' : j.error === 'too_long' ? 'المدة أطول من باقتك.' : j.error === 'plan_required' ? 'باقتك انتهت. جدّد من قسم الباقات.' : 'تعذر البدء، سجّل دخول تاني.');
-      vid = j.vid; me = Object.assign(me, j.me); refreshUsage();
-    } catch { return status('تعذر الاتصال بالسيرفر (ممكن بيصحى)، جرّب بعد دقيقة.'); }
-  } else if (!store.get('gkey', '')) status('بدون مفتاح Gemini هيطلع فيديو تجريبي. أضف مفتاحك المجاني من الإعدادات.');
-  const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
-  W = $('orient').value === 'h' ? 1280 : 720; H = $('orient').value === 'h' ? 720 : 1280;
   $('go').disabled = true; $('result').hidden = true;
-  let lock = null; try { if (secs > 60 && navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch {}
+  let lock = null;
   try {
+    if (paid()) {
+      let r, j;
+      try { r = await fetch(PAY_API + '/reel/start', { method: 'POST', headers: authH(), body: JSON.stringify({ secs }) }); j = await r.json(); }
+      catch { throw new Error('تعذر الاتصال بالسيرفر (ممكن بيصحى)، جرّب بعد دقيقة.'); }
+      if (!r.ok) throw new Error(j.error === 'monthly_limit' ? 'وصلت للحد الشهري للباقة.' : j.error === 'too_long' ? 'المدة أطول من باقتك.' : j.error === 'plan_required' ? 'باقتك انتهت. جدّد من قسم الباقات.' : 'تعذر البدء، سجّل دخول تاني.');
+      vid = j.vid; me = Object.assign(me, j.me); refreshUsage();
+    } else if (!store.get('gkey', '')) status('بدون مفتاح Gemini هيطلع فيديو تجريبي. أضف مفتاحك المجاني من الإعدادات.');
+    const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
+    W = $('orient').value === 'h' ? 1280 : 720; H = $('orient').value === 'h' ? 720 : 1280;
+    try { if (secs > 60 && navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch {}
     status('جاري كتابة السيناريو...'); const s = await makeScript(idea, $('tone').value, nScenes);
-    const ctxA = new (window.AudioContext || window.webkitAudioContext)();
+    const st = { idea, scenes: s.scenes, imgs: s.imgs, emojis: s.emojis, theme: +$('theme').value, bitmaps: null, bounds: [] };
+    const imgP = loadImages(st).catch(() => { st.bitmaps = st.scenes.map(() => null); });
     status('جاري توليد الصوت...'); const au = await makeAudioLong(s.scenes, $('voice').value, ctxA);
-    blob = await render(s.scenes, au.buf, ctxA, +$('theme').value, au.bounds);
+    st.bounds = au.bounds; await imgP;
+    if (!st.bitmaps) st.bitmaps = st.scenes.map(() => null);
+    if (ctxA.state === 'suspended') await Promise.race([ctxA.resume(), sleep(3000)]);
+    blob = await render(st, au.buf, ctxA, $('music').checked);
     if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = URL.createObjectURL(blob);
     $('player').src = blobUrl; $('title').value = s.title; $('desc').value = s.description;
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'; $('download').href = blobUrl; $('download').download = 'reel.' + ext;
-    $('result').hidden = false; if (!paid()) store.set('used-' + monthKey(), used() + 1); refreshUsage(); status('تم! الفيديو جاهز.');
-    window.__lastBlobSize = blob.size;
-  } catch (e) { status('خطأ: ' + e.message); }
+    $('result').hidden = false; if (!paid()) store.set('used-' + monthKey(), used() + 1); refreshUsage();
+    status('تم! الفيديو جاهز.' + (st.imgOk ? '' : ' (الصور مش متاحة دلوقتي فاستخدمت خلفيات ملونة)'));
+    window.__lastBlobSize = blob.size; window.__st = { imgOk: st.imgOk, n: st.scenes.length };
+  } catch (e) { status('خطأ: ' + (/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'مشكلة اتصال بالإنترنت أو بالخدمة. جرّب تاني.' : e.message)); }
   if (lock) try { lock.release(); } catch {}
+  try { ctxA.close(); } catch {}
   $('go').disabled = false;
 };
+window.addEventListener('unhandledrejection', e => status('خطأ غير متوقع: ' + ((e.reason && e.reason.message) || e.reason)));
+window.addEventListener('error', e => status('خطأ غير متوقع: ' + e.message));
 $('share').onclick = async () => {
   const f = new File([blob], $('download').download, { type: blob.type });
   if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f], title: $('title').value, text: $('desc').value }); } catch {} }
