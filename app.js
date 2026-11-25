@@ -18,9 +18,20 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} }
 };
 function monthKey() { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); }
-function plan() { return store.get('plan', 'free'); }
-function used() { return +store.get('used-' + monthKey(), 0); }
-function refreshUsage() { $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${PLANS[plan()]} | أقصى مدة: ${MAXSEC[plan()] / 60} دقيقة`; }
+let me = null;
+function plan() { return me ? me.plan : 'free'; }
+const paid = () => plan() !== 'free';
+const hasKey = () => paid() || !!store.get('gkey', '');
+function used() { return paid() ? me.used : +store.get('used-' + monthKey(), 0); }
+function limit() { return paid() ? me.limit : PLANS.free; }
+function maxSecs() { return paid() ? me.maxSecs : MAXSEC.free; }
+function refreshUsage() {
+  $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${limit()} | أقصى مدة: ${maxSecs() / 60} دقيقة`;
+  $('gkeyWrap').hidden = paid();
+  $('acctIn').hidden = !me; $('acctOut').hidden = !!me;
+  if (me) $('acctInfo').textContent = `${me.email} | الباقة: ${PLAN_NAMES[plan()]}` + (paid() ? ` | تنتهي ${new Date(me.planUntil).toLocaleDateString('ar-EG')}` : '');
+  if (typeof updWarn === 'function') updWarn();
+}
 
 // ---------- settings ----------
 function loadSettings() {
@@ -50,7 +61,13 @@ function status(t) { const s = $('status'); s.hidden = false; s.textContent = t;
 const TEXT_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
 const TTS_FALLBACKS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+let vid = null;
 async function geminiOnce(model, body) {
+  if (paid()) {
+    const r = await fetch(PAY_API + '/reel/gen', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.get('tok', '') }, body: JSON.stringify({ vid, model, body }) });
+    if (!r.ok) { const e = new Error('Gemini ' + r.status); e.code = r.status; e.detail = (await r.text()).slice(0, 300); e.proxy = true; throw e; }
+    return r.json();
+  }
   const key = store.get('gkey', '');
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body)
@@ -68,7 +85,9 @@ async function gemini(model, body, fallbacks) {
       catch (e) {
         last = e;
         const busy = !e.code || [429, 500, 502, 503, 504].includes(e.code);
-        if (e.code === 401 || e.code === 403 || (e.code === 400 && /API key/i.test(e.detail || ''))) throw new Error('مفتاح Gemini غير صالح أو غير مفعّل. راجع الإعدادات.');
+        if (e.proxy && [401, 402, 403].includes(e.code)) throw new Error('مشكلة في حسابك أو باقتك (' + e.code + '). سجّل دخول تاني أو راجع الباقة.');
+        if (e.proxy && e.code === 503 && /key_missing/.test(e.detail)) throw new Error('الخدمة غير جاهزة بعد، جرّب لاحقا.');
+        if (!e.proxy && (e.code === 401 || e.code === 403) || (!e.proxy && e.code === 400 && /API key/i.test(e.detail || ''))) throw new Error('مفتاح Gemini غير صالح أو غير مفعّل. راجع الإعدادات.');
         if (!busy) break; // bad/unknown model: try the next one right away
         if (t < 3) { status('السيرفر مزدحم، بحاول تاني... (' + (t + 2) + '/4)'); await sleepMs(1500 * Math.pow(2, t)); }
       }
@@ -91,8 +110,7 @@ async function scriptChunk(idea, tone, n, prev, first, total) {
   return out;
 }
 async function makeScript(idea, tone, scenes) {
-  const key = store.get('gkey', '');
-  if (!key) return demoScript(idea, scenes);
+  if (!hasKey()) return demoScript(idea, scenes);
   const CH = 15; let all = [], head = null;
   while (all.length < scenes) {
     const n = Math.min(CH, scenes - all.length);
@@ -111,8 +129,7 @@ function demoScript(idea, n) {
   return { title: idea.slice(0, 60), description: idea + ' #shorts #عربي #أفكار', scenes: sc };
 }
 async function makeAudio(text, voice, ctx) {
-  const key = store.get('gkey', '');
-  if (!key) { // demo: soft tone, 2.3s per scene-ish
+  if (!hasKey()) { // demo: soft tone, 2.3s per scene-ish
     const sec = Math.max(8, text.length / 12), sr = 24000, buf = ctx.createBuffer(1, sr * sec, sr), d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = 0.05 * Math.sin(2 * Math.PI * 330 * i / sr) * (Math.sin(i / sr * 3) > 0 ? 1 : 0.2);
     return buf;
@@ -139,7 +156,7 @@ async function makeAudioLong(scenes, voice, ctx) {
     const lens = groups[gi].map(x => x.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
     lens.forEach(l => { acc += l; bounds.push(total + acc / sum * buf.duration); });
     total += buf.duration; bufs.push(buf);
-    if (gi < groups.length - 1 && store.get('gkey', '')) await sleep(1500);
+    if (gi < groups.length - 1 && hasKey()) await sleep(paid() ? 4500 : 1500);
   }
   const rate = bufs[0].sampleRate, out = ctx.createBuffer(1, bufs.reduce((a, b) => a + Math.round(b.length * rate / b.sampleRate), 0), rate), d = out.getChannelData(0); let off = 0;
   for (const b of bufs) { const x = b.getChannelData(0); d.set(x, off); off += x.length; }
@@ -196,9 +213,17 @@ const fmt = x => { x = Math.max(0, Math.round(x)); return Math.floor(x / 60) + '
 // ---------- main flow ----------
 $('go').onclick = async () => {
   const idea = $('idea').value.trim(); if (!idea) return status('اكتب الفكرة أولا');
-  if (used() >= PLANS[plan()]) return status('وصلت للحد الشهري للباقة. اختر باقة أعلى من قسم الباقات.');
+  if (used() >= limit()) return status('وصلت للحد الشهري للباقة. اختر باقة أعلى من قسم الباقات.');
   const secs = getSecs();
-  if (secs > MAXSEC[plan()]) return status(`باقتك (${PLAN_NAMES[plan()]}) تسمح بفيديو حتى ${MAXSEC[plan()] / 60} دقيقة. اختر مدة أقصر أو باقة أعلى.`);
+  if (secs > maxSecs()) return status(`باقتك (${PLAN_NAMES[plan()]}) تسمح بفيديو حتى ${maxSecs() / 60} دقيقة. اختر مدة أقصر أو باقة أعلى.`);
+  if (paid()) {
+    try {
+      const r = await fetch(PAY_API + '/reel/start', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.get('tok', '') }, body: JSON.stringify({ secs }) });
+      const j = await r.json();
+      if (!r.ok) return status(j.error === 'monthly_limit' ? 'وصلت للحد الشهري للباقة.' : j.error === 'too_long' ? 'المدة أطول من باقتك.' : j.error === 'plan_required' ? 'باقتك انتهت. جدّد من قسم الباقات.' : 'تعذر البدء، سجّل دخول تاني.');
+      vid = j.vid; me = Object.assign(me, j.me); refreshUsage();
+    } catch { return status('تعذر الاتصال بالسيرفر (ممكن بيصحى)، جرّب بعد دقيقة.'); }
+  } else if (!store.get('gkey', '')) status('بدون مفتاح Gemini هيطلع فيديو تجريبي. أضف مفتاحك المجاني من الإعدادات.');
   const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
   W = $('orient').value === 'h' ? 1280 : 720; H = $('orient').value === 'h' ? 720 : 1280;
   $('go').disabled = true; $('result').hidden = true;
@@ -211,7 +236,7 @@ $('go').onclick = async () => {
     if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = URL.createObjectURL(blob);
     $('player').src = blobUrl; $('title').value = s.title; $('desc').value = s.description;
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'; $('download').href = blobUrl; $('download').download = 'reel.' + ext;
-    $('result').hidden = false; store.set('used-' + monthKey(), used() + 1); refreshUsage(); status('تم! الفيديو جاهز.');
+    $('result').hidden = false; if (!paid()) store.set('used-' + monthKey(), used() + 1); refreshUsage(); status('تم! الفيديو جاهز.');
     window.__lastBlobSize = blob.size;
   } catch (e) { status('خطأ: ' + e.message); }
   if (lock) try { lock.release(); } catch {}
@@ -250,54 +275,82 @@ function updWarn() {
   $('customWrap').hidden = $('length').value !== 'custom';
   const secs = getSecs(), w = $('longWarn');
   if (secs <= 60) { w.hidden = true; return; }
-  const key = store.get('gkey', '');
+  const key = hasKey();
   w.hidden = false;
   w.textContent = `تنبيه: الفيديو الطويل (${fmt(secs)}) بيتصوّر في وقت حقيقي، يعني هياخد حوالي ${Math.ceil(secs / 60) + Math.ceil(secs / 60 / 3)} دقيقة أو أكتر. سيب الصفحة مفتوحة والشاشة شغالة ولا تغيّر التطبيق.` +
     (key ? ' الحدود المجانية لجوجل ممكن تبطّئ التوليد وتعمل إعادة محاولة تلقائية.' : ' (بدون مفتاح جوجل هيطلع فيديو تجريبي.)') +
-    (secs > MAXSEC[plan()] ? ` باقتك الحالية تسمح بحتى ${MAXSEC[plan()] / 60} دقيقة فقط.` : '');
+    (secs > maxSecs() ? ` باقتك الحالية تسمح بحتى ${maxSecs() / 60} دقيقة فقط.` : '');
 }
 ['length', 'customMin'].forEach(i => $(i).addEventListener('input', updWarn)); $('length').addEventListener('change', updWarn);
 $('length').value = '30'; updWarn();
 
+// ---------- accounts ----------
+const authH = () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.get('tok', '') });
+function aMsg(t, cls) { const m = $('aMsg'); m.hidden = !t; m.textContent = t || ''; m.className = 'status ' + (cls || ''); }
+async function authCall(kind) {
+  const email = $('aEmail').value.trim(), password = $('aPass').value;
+  if (!email || password.length < 6) return aMsg('اكتب إيميل صحيح وباسورد 6 أحرف أو أكتر', 'bad');
+  aMsg('لحظة...', 'pend');
+  try {
+    const r = await fetch(PAY_API + '/reel/' + kind, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const j = await r.json();
+    if (!r.ok) return aMsg(j.error === 'exists' ? 'الإيميل ده مسجّل. اضغط دخول.' : j.error === 'wrong_login' ? 'الإيميل أو الباسورد غلط.' : j.error === 'too_many' ? 'محاولات كتير، استنى شوية.' : 'تعذر: ' + (j.error || r.status), 'bad');
+    store.set('tok', j.token); me = j.me; aMsg(''); $('aPass').value = ''; refreshUsage(); checkPending();
+    if (wantPlan) { const p = wantPlan; wantPlan = null; openPay(p); }
+  } catch { aMsg('تعذر الاتصال بالسيرفر (ممكن بيصحى)، جرّب بعد دقيقة.', 'bad'); }
+}
+$('aLogin').onclick = () => authCall('login'); $('aSignup').onclick = () => authCall('signup');
+$('logout').onclick = () => { store.set('tok', ''); me = null; $('pay').hidden = true; showPayStatus(''); refreshUsage(); };
+async function loadMe() {
+  if (!store.get('tok', '')) return refreshUsage();
+  try { const r = await fetch(PAY_API + '/reel/me', { headers: authH() }); if (r.status === 401) { store.set('tok', ''); me = null; } else if (r.ok) me = await r.json(); } catch {}
+  refreshUsage();
+}
+
 // ---------- Vodafone Cash payment (manual approval) ----------
-let payPlan = null;
+let payPlan = null, wantPlan = null;
 function payRef() { let r = store.get('payref', ''); if (!r) { r = 'RM-' + Math.random().toString(36).slice(2, 8).toUpperCase(); store.set('payref', r); } return r; }
 function showPayStatus(t, cls) { const p = $('payStatus'); p.hidden = !t; p.textContent = t || ''; p.className = 'status ' + (cls || ''); }
-document.querySelectorAll('.pick').forEach(b => b.onclick = () => {
-  const p = b.dataset.plan;
-  if (p === 'free') { store.set('plan', 'free'); refreshUsage(); return; }
+function openPay(p) {
   payPlan = p; $('payPlan').textContent = PLAN_NAMES[p]; $('payAmount').textContent = PRICES[p];
   $('payNumber').textContent = VF_NUMBER; $('payRef').textContent = payRef(); $('pay').hidden = false; $('payMsg').hidden = true;
   $('pay').scrollIntoView({ behavior: 'smooth' });
+}
+document.querySelectorAll('.pick').forEach(b => b.onclick = () => {
+  const p = b.dataset.plan;
+  if (p === 'free') { $('pay').hidden = true; return aMsg(me ? '' : 'الباقة المجانية: ما تحتاجش حساب، أضف مفتاح Gemini من الإعدادات.', 'pend'), $('acct').scrollIntoView({ behavior: 'smooth' }); }
+  if (!me) { wantPlan = p; aMsg('سجّل دخول أو أنشئ حساب الأول، وبعدها تكمل الدفع.', 'pend'); $('acct').scrollIntoView({ behavior: 'smooth' }); return; }
+  openPay(p);
 });
 $('copyNum').onclick = async () => { try { await navigator.clipboard.writeText(VF_NUMBER); $('copyNum').textContent = 'تم النسخ'; } catch { $('copyNum').textContent = VF_NUMBER; } };
 function payMsg(t, cls) { const m = $('payMsg'); m.hidden = false; m.textContent = t; m.className = 'status ' + (cls || ''); }
 $('paySend').onclick = async () => {
   const sender = $('paySender').value.replace(/\D/g, ''), tx = $('payTx').value.trim();
-  if (!payPlan) return;
+  if (!payPlan || !me) return;
   if (sender.length < 10) return payMsg('اكتب رقم الموبايل اللي حوّلت منه', 'bad');
   if (tx.length < 4) return payMsg('اكتب رقم العملية من رسالة فودافون', 'bad');
   const ref = payRef();
   $('paySend').disabled = true;
   try {
-    const r = await fetch(PAY_API + '/reel/pay', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ref, plan: payPlan, sender, tx }) });
+    const r = await fetch(PAY_API + '/reel/pay', { method: 'POST', headers: authH(), body: JSON.stringify({ ref, plan: payPlan, sender, tx }) });
     if (!r.ok) throw new Error('server ' + r.status);
     store.set('pending', JSON.stringify({ ref, plan: payPlan }));
-    payMsg('تم الإرسال. الحالة: قيد المراجعة. ابعت لقطة شاشة التحويل على واتساب وهتتفعل الباقة بعد المراجعة.', 'pend');
-    const text = `طلب اشتراك ReelMaker\nالباقة: ${PLAN_NAMES[payPlan]}\nالمبلغ: ${PRICES[payPlan]} ج.م\nالمرجع: ${ref}\nمن رقم: ${sender}\nرقم العملية: ${tx}`;
+    payMsg('تم الإرسال. الحالة: قيد المراجعة. ابعت لقطة شاشة التحويل على واتساب وهتتفعل الباقة على حسابك بعد المراجعة.', 'pend');
+    const text = `طلب اشتراك ReelMaker\nالحساب: ${me.email}\nالباقة: ${PLAN_NAMES[payPlan]}\nالمبلغ: ${PRICES[payPlan]} ج.م\nالمرجع: ${ref}\nمن رقم: ${sender}\nرقم العملية: ${tx}`;
     window.open(`https://wa.me/${CONTACT_WA}?text=${encodeURIComponent(text)}`, '_blank');
     checkPending();
   } catch (e) { payMsg('تعذر الإرسال (السيرفر ممكن يكون بيصحى، جرّب بعد دقيقة): ' + e.message, 'bad'); }
   $('paySend').disabled = false;
 };
 async function checkPending() {
+  if (!me) return;
   let p; try { p = JSON.parse(store.get('pending', 'null')); } catch {} if (!p) return;
   try {
-    const r = await fetch(PAY_API + '/reel/status?ref=' + encodeURIComponent(p.ref)); if (!r.ok) return;
+    const r = await fetch(PAY_API + '/reel/status?ref=' + encodeURIComponent(p.ref), { headers: authH() }); if (!r.ok) return;
     const j = await r.json();
-    if (j.status === 'approved') { store.set('plan', j.plan); store.set('pending', ''); store.set('payref', ''); refreshUsage(); showPayStatus('تم تفعيل باقة ' + PLAN_NAMES[j.plan] + ' ✅', 'ok'); $('pay').hidden = true; }
+    if (j.status === 'approved') { store.set('pending', ''); store.set('payref', ''); await loadMe(); showPayStatus('تم تفعيل باقة ' + PLAN_NAMES[j.plan] + ' ✅', 'ok'); $('pay').hidden = true; }
     else if (j.status === 'rejected') { store.set('pending', ''); store.set('payref', ''); showPayStatus('تم رفض طلب الدفع. تواصل معنا على واتساب.', 'bad'); }
     else showPayStatus(`طلب ${PLAN_NAMES[p.plan]} (${p.ref}): قيد المراجعة`, 'pend');
   } catch {}
 }
-checkPending(); setInterval(checkPending, 60000);
+loadMe().then(checkPending); setInterval(checkPending, 60000);

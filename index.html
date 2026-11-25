@@ -69,15 +69,27 @@
   </div>
 </section>
 
+<section id="acct" class="card">
+  <h2>حسابي</h2>
+  <div id="acctIn" hidden><p id="acctInfo"></p><button id="logout" type="button" class="mini">تسجيل خروج</button></div>
+  <div id="acctOut">
+    <p class="muted">الباقات المدفوعة تحتاج حساب (إيميل وباسورد). المجاني ما يحتاجش حساب.</p>
+    <label>الإيميل <input id="aEmail" type="email" dir="ltr" autocomplete="email"></label>
+    <label>الباسورد (6 أحرف على الأقل) <input id="aPass" type="password" dir="ltr" autocomplete="current-password"></label>
+    <button id="aLogin" type="button">دخول</button> <button id="aSignup" type="button">إنشاء حساب جديد</button>
+    <div id="aMsg" class="status" hidden></div>
+  </div>
+</section>
+
 <section id="plans">
   <h2>الباقات</h2>
   <div class="plans">
     <div class="plan"><h3>مجاني</h3><div class="price">0 ج.م</div><ul><li>3 فيديوهات في الشهر</li><li>حتى دقيقة للفيديو</li><li>تحميل ومشاركة</li></ul><button class="pick" data-plan="free">استخدم</button></div>
-    <div class="plan"><h3>Starter</h3><div class="price"><span data-price="starter">299</span> ج.م<small>/شهر</small></div><ul><li>20 فيديو</li><li>حتى 5 دقائق للفيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="starter">اشترك</button></div>
-    <div class="plan best"><h3>Pro</h3><div class="price"><span data-price="pro">499</span> ج.م<small>/شهر</small></div><ul><li>40 فيديو</li><li>حتى 10 دقائق للفيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="pro">اشترك</button></div>
-    <div class="plan"><h3>Business</h3><div class="price"><span data-price="business">999</span> ج.م<small>/شهر</small></div><ul><li>100 فيديو</li><li>حتى 30 دقيقة للفيديو</li><li>كل المنصات + أولوية</li></ul><button class="pick" data-plan="business">اشترك</button></div>
+    <div class="plan"><h3>Starter</h3><div class="price"><span data-price="starter">299</span> ج.م<small>/شهر</small></div><ul><li>60 فيديو في الشهر</li><li>بدون مفتاح Gemini</li><li>حتى 5 دقائق للفيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="starter">اشترك</button></div>
+    <div class="plan best"><h3>Pro</h3><div class="price"><span data-price="pro">499</span> ج.م<small>/شهر</small></div><ul><li>150 فيديو في الشهر</li><li>بدون مفتاح Gemini</li><li>حتى 10 دقائق للفيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="pro">اشترك</button></div>
+    <div class="plan"><h3>Business</h3><div class="price"><span data-price="business">999</span> ج.م<small>/شهر</small></div><ul><li>400 فيديو في الشهر</li><li>بدون مفتاح Gemini</li><li>حتى 30 دقيقة للفيديو</li><li>كل المنصات + أولوية</li></ul><button class="pick" data-plan="business">اشترك</button></div>
   </div>
-  <p class="muted">الدفع بفودافون كاش (يدوي): اختر باقة، حوّل المبلغ، أدخل بيانات التحويل، وبعد مراجعتنا تتفعل الباقة على جهازك. الباقة الحالية محفوظة على جهازك.</p>
+  <p class="muted">الدفع بفودافون كاش (يدوي): اختر باقة، حوّل المبلغ، أدخل بيانات التحويل، وبعد مراجعتنا تتفعل الباقة على جهازك. الباقة محفوظة على حسابك في السيرفر.</p>
   <div id="payStatus" class="status" hidden></div>
 </section>
 
@@ -99,7 +111,7 @@
 
 <section id="settings" class="card">
   <h2>الإعدادات</h2>
-  <label>مفتاح Gemini API (مجاني من aistudio.google.com/apikey، يُحفظ على جهازك فقط)
+  <label id="gkeyWrap">مفتاح Gemini API (مجاني من aistudio.google.com/apikey، يُحفظ على جهازك فقط)
     <input id="gkey" type="password" dir="ltr" placeholder="AIza...">
   </label>
   <label>نموذج النص <input id="mtext" dir="ltr"></label>
