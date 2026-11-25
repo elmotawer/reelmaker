@@ -28,7 +28,7 @@ function used() { return paid() ? me.used : +store.get('used-' + monthKey(), 0);
 function limit() { return paid() ? me.limit : PLANS.free; }
 function maxSecs() { return paid() ? me.maxSecs : MAXSEC.free; }
 function refreshUsage() {
-  $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${limit()} | أقصى مدة: ${maxSecs() / 60} دقيقة`;
+  $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${limit()} | أقصى مدة: ${maxSecs() / 60} دقيقة | إصدار ${window.APP_V || '?'}`;
   $('gkeyWrap').hidden = paid(); $('pixWrap').hidden = paid();
   $('acctIn').hidden = !me; $('acctOut').hidden = !!me;
   if (me) $('acctInfo').textContent = `${me.email} | الباقة: ${PLAN_NAMES[plan()]}` + (paid() ? ` | تنتهي ${new Date(me.planUntil).toLocaleDateString('ar-EG')}` : '');
@@ -336,7 +336,7 @@ $('go').onclick = async () => {
       let r, j;
       try { r = await fetch(PAY_API + '/reel/start', { method: 'POST', headers: authH(), body: JSON.stringify({ secs }) }); j = await r.json(); }
       catch { throw new Error('تعذر الاتصال بالسيرفر (ممكن بيصحى)، جرّب بعد دقيقة.'); }
-      if (!r.ok) throw new Error(j.error === 'monthly_limit' ? 'وصلت للحد الشهري للباقة.' : j.error === 'too_long' ? 'المدة أطول من باقتك.' : j.error === 'plan_required' ? 'باقتك انتهت. جدّد من قسم الباقات.' : 'تعذر البدء، سجّل دخول تاني.');
+      if (!r.ok) throw new Error(j.error === 'monthly_limit' ? 'وصلت للحد الشهري لباقتك على السيرفر (' + (j.limit || '') + ' فيديو).' : j.error === 'too_long' ? 'المدة أطول من باقتك.' : j.error === 'plan_required' ? 'باقتك انتهت. جدّد من قسم الباقات.' : 'تعذر البدء، سجّل دخول تاني.');
       vid = j.vid; me = Object.assign(me, j.me); refreshUsage();
     } else if (!store.get('gkey', '')) status('بدون مفتاح Gemini هيطلع فيديو تجريبي. أضف مفتاحك المجاني من الإعدادات.');
     const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
@@ -478,4 +478,8 @@ loadMe().then(checkPending); setInterval(checkPending, 60000);
 
 // free counter is stored only on this device: let the owner reset it for testing
 $('resetUsage').onclick = () => { store.set('used-' + monthKey(), 0); $('resetWrap').hidden = true; refreshUsage(); status('تم تصفير عداد الفيديوهات المجانية على جهازك.'); };
-if (/[?&]reset=1/.test(location.search)) { store.set('used-' + monthKey(), 0); refreshUsage(); }
+if (/[?&]reset=1/.test(location.search)) {
+  try { Object.keys(localStorage).filter(k => k.indexOf('used-') === 0).forEach(k => localStorage.removeItem(k)); } catch {}
+  refreshUsage(); statusScrolled = false; status('✅ تم تصفير عداد الفيديوهات المجانية: ' + used() + ' من ' + limit());
+  try { const q = new URLSearchParams(location.search); q.delete('reset'); history.replaceState(null, '', location.pathname + '?' + q.toString()); } catch {}
+}
