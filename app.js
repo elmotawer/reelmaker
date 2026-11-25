@@ -98,8 +98,8 @@ async function gemini(model, body, fallbacks, preview) {
     }
     if (mi < list.length - 1) status('النموذج مشغول، بجرّب نموذج تاني...');
   }
-  if (last && last.code === 429) throw new Error(last.proxy ? 'عدد الطلبات كتير في الدقيقة أو وصلت لحد الخدمة. استنى دقيقة وجرّب تاني.' : 'وصل مفتاح Gemini لحد الاستخدام المجاني (حصة في الدقيقة أو اليوم، Google هي اللي بتحددها). استنى شوية أو استخدم مفتاح من حساب تاني.');
-  throw new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')');
+  if (last && last.code === 429) throw Object.assign(new Error(last.proxy ? 'عدد الطلبات كتير في الدقيقة أو وصلت لحد الخدمة. استنى دقيقة وجرّب تاني.' : 'وصل مفتاح Gemini لحد الاستخدام المجاني (حصة في الدقيقة أو اليوم، Google هي اللي بتحددها). استنى شوية أو استخدم مفتاح من حساب تاني.'), { busy: true });
+  { const be = new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')'); be.busy = true; throw be; }
 }
 const normScene = x => typeof x === 'string' ? { t: x, img: '', e: '✨' } : { t: String(x.t || x.text || '').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim(), img: String(x.img || x.image || ''), e: String(x.e || x.emoji || '✨').slice(0, 4) };
 async function scriptChunk(idea, tone, n, prev, first, total) {
@@ -120,14 +120,14 @@ async function scriptChunk(idea, tone, n, prev, first, total) {
 }
 async function makeScript(idea, tone, scenes) {
   if (!hasKey()) return demoScript(idea, scenes);
-  const CH = 15; let all = [], head = null;
+  const CH = 15; let all = (RES && RES.sc && RES.sc.all) || [], head = (RES && RES.sc && RES.sc.head) || null;
   while (all.length < scenes) {
     const n = Math.min(CH, scenes - all.length);
     status(`جاري كتابة السيناريو... (${all.length} من ${scenes} مشهد)`);
     let out, tries = 0;
     for (;;) { try { out = await scriptChunk(idea, tone, n, all, !head, scenes); break; } catch (e) { if (++tries >= 3) throw e; await sleep(3000 * tries); } }
     if (!head) head = out;
-    all = all.concat(out.scenes.slice(0, n + 3));
+    all = all.concat(out.scenes.slice(0, n + 3)); if (RES) RES.sc = { all, head };
   }
   all = all.slice(0, scenes);
   return { title: head.title, description: head.description, scenes: all.map(x => x.t), imgs: all.map(x => x.img || idea), emojis: all.map(x => x.e) };
@@ -182,10 +182,11 @@ async function makeAudioLong(scenes, voice, ctx) {
     const lens = scenes.map(x => x.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
     return { buf, bounds: lens.map((l, i) => i === lens.length - 1 ? buf.duration + 0.6 : (acc += l) / sum * buf.duration) };
   }
-  ttsPref = null;
-  const G = 4, parts = [], bounds = []; let total = 0, rate = 24000;
+  const A = (RES && RES.au) || (RES ? (RES.au = { parts: [], bounds: [], total: 0, rate: 24000, gi: 0, pref: null }) : { parts: [], bounds: [], total: 0, rate: 24000, gi: 0, pref: null });
+  ttsPref = A.pref;
+  const G = 4, parts = A.parts, bounds = A.bounds; let total = A.total, rate = A.rate;
   const groups = []; for (let i = 0; i < scenes.length; i += G) groups.push(scenes.slice(i, i + G));
-  for (let gi = 0; gi < groups.length; gi++) {
+  for (let gi = A.gi; gi < groups.length; gi++) {
     status(`جاري توليد الصوت... (${gi + 1} من ${groups.length})`);
     let r, tries = 0;
     const gtext = groups[gi].join(' '), words = gtext.split(/\s+/).length, maxDur = words / 2.3 * 1.6 + 2; let rep = 0;
@@ -196,7 +197,7 @@ async function makeAudioLong(scenes, voice, ctx) {
     rate = r.rate; const x = polish(r.d, r.rate), dur = x.length / rate;
     const lens = groups[gi].map(t => t.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
     lens.forEach(l => { acc += l; bounds.push(total + acc / sum * dur); });
-    total += dur; parts.push(x);
+    total += dur; parts.push(x); A.total = total; A.rate = rate; A.gi = gi + 1; A.pref = ttsPref;
     if (gi < groups.length - 1) await sleep(paid() ? 4500 : 1500);
   }
   const out = ctx.createBuffer(1, parts.reduce((a, p) => a + p.length, 0), rate), d = out.getChannelData(0); let off = 0;
@@ -204,6 +205,7 @@ async function makeAudioLong(scenes, voice, ctx) {
   bounds[bounds.length - 1] = out.duration + 0.6;
   return { buf: out, bounds };
 }
+let RES = null; // saved progress so a busy-server failure can resume
 let prevAudio = null;
 async function previewVoice() {
   const b = $('prevVoice'); b.disabled = true; const old = b.textContent; b.textContent = '... جاري التحميل';
@@ -392,15 +394,17 @@ $('go').onclick = async () => {
   if (used() >= limit()) { status(`وصلت للحد الشهري لباقة ${PLAN_NAMES[plan()]}: ${used()} من ${limit()} فيديو.` + (paid() ? ' الحد بيتجدد أول الشهر.' : ' (العداد على جهازك)')); $('resetWrap').hidden = paid(); return; }
   const secs = getSecs();
   if (secs > maxSecs()) return status(`باقتك (${PLAN_NAMES[plan()]}) تسمح بفيديو حتى ${maxSecs() / 60} دقيقة. اختر مدة أقصر أو باقة أعلى.`);
-  $('go').disabled = true; $('result').hidden = true;
+  const sig = [idea, $('tone').value, secs, $('voice').value, $('dialect').value, $('orient').value].join('|');
+  if (!RES || RES.sig !== sig) RES = { sig };
+  $('go').disabled = true; $('result').hidden = true; $('resume').hidden = true;
   let lock = null;
   try {
-    if (paid()) {
+    if (RES.vid) { vid = RES.vid; } else if (paid()) {
       let r, j;
       try { r = await fetch(PAY_API + '/reel/start', { method: 'POST', headers: authH(), body: JSON.stringify({ secs }) }); j = await r.json(); }
       catch { throw new Error('تعذر الاتصال بالسيرفر (ممكن بيصحى)، جرّب بعد دقيقة.'); }
       if (!r.ok) throw new Error(j.error === 'monthly_limit' ? 'وصلت للحد الشهري لباقتك على السيرفر (' + (j.limit || '') + ' فيديو).' : j.error === 'too_long' ? 'المدة أطول من باقتك.' : j.error === 'plan_required' ? 'باقتك انتهت. جدّد من قسم الباقات.' : 'تعذر البدء، سجّل دخول تاني.');
-      vid = j.vid; me = Object.assign(me, j.me); refreshUsage();
+      vid = j.vid; RES.vid = vid; me = Object.assign(me, j.me); refreshUsage();
     } else if (!store.get('gkey', '')) status('بدون مفتاح Gemini هيطلع فيديو تجريبي. أضف مفتاحك المجاني من الإعدادات.');
     const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
     W = $('orient').value === 'h' ? 1280 : 720; H = $('orient').value === 'h' ? 720 : 1280;
@@ -408,8 +412,8 @@ $('go').onclick = async () => {
     status('جاري كتابة السيناريو...'); const s = await makeScript(idea, $('tone').value, nScenes);
     const st = { idea, scenes: s.scenes, imgs: s.imgs, emojis: s.emojis, theme: +$('theme').value, bitmaps: null, bounds: [] };
     const imgP = loadImages(st).catch(() => { st.bitmaps = st.scenes.map(() => null); });
-    status('جاري توليد الصوت...'); const au = await makeAudioLong(s.scenes, $('voice').value, ctxA);
-    st.bounds = au.bounds; window.__au = au; await imgP;
+    status('جاري توليد الصوت...'); const au = RES.done ? RES.done : await makeAudioLong(s.scenes, $('voice').value, ctxA);
+    RES.done = au; st.bounds = au.bounds; window.__au = au; await imgP;
     if (!st.bitmaps) st.bitmaps = st.scenes.map(() => null);
     if (ctxA.state === 'suspended') await Promise.race([ctxA.resume(), sleep(3000)]);
     blob = await render(st, au.buf, ctxA, $('music').checked);
@@ -418,8 +422,11 @@ $('go').onclick = async () => {
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'; $('download').href = blobUrl; $('download').download = 'reel.' + ext;
     $('result').hidden = false; if (!paid()) store.set('used-' + monthKey(), used() + 1); refreshUsage();
     status('تم! الفيديو جاهز.' + (st.imgOk ? '' : ' (الصور مش متاحة دلوقتي فاستخدمت خلفيات ملونة)'));
-    window.__lastBlobSize = blob.size; window.__st = { imgOk: st.imgOk, n: st.scenes.length };
-  } catch (e) { status('خطأ: ' + (/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'مشكلة اتصال بالإنترنت أو بالخدمة. جرّب تاني.' : e.message)); }
+    RES = null; window.__lastBlobSize = blob.size; window.__st = { imgOk: st.imgOk, n: st.scenes.length };
+  } catch (e) {
+    const net = /Failed to fetch|NetworkError|Load failed/i.test(e.message);
+    if ((e.busy || net) && RES) { status((net ? 'مشكلة اتصال مؤقتة.' : 'سيرفر Gemini مشغول دلوقتي.') + ' مفيش حاجة ضاعت، اللي خلص متحفظ. استنى شوية واضغط كمّل.'); $('resume').hidden = false; }
+    else { RES = null; status('خطأ: ' + e.message); } }
   if (lock) try { lock.release(); } catch {}
   try { ctxA.close(); } catch {}
   $('go').disabled = false;
@@ -548,3 +555,4 @@ if (/[?&]reset=1/.test(location.search)) {
 }
 
 $('prevVoice').onclick = previewVoice;
+$('resume').onclick = () => $('go').onclick();
