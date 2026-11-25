@@ -32,7 +32,16 @@
       </select>
     </label>
     <label>المدة
-      <select id="length"><option value="4">قصير (~20 ث)</option><option value="6" selected>متوسط (~30 ث)</option><option value="9">طويل (~45 ث)</option></select>
+      <select id="length">
+        <optgroup label="قصير (ريلز / شورتس)"><option value="20">20 ثانية</option><option value="30" selected>30 ثانية</option><option value="45">45 ثانية</option></optgroup>
+        <optgroup label="طويل (يوتيوب)"><option value="60">دقيقة</option><option value="180">3 دقائق</option><option value="300">5 دقائق</option><option value="480">8 دقائق</option><option value="600">10 دقائق</option><option value="custom">مدة مخصصة...</option></optgroup>
+      </select>
+    </label>
+    <label id="customWrap" hidden>عدد الدقائق (1 إلى 30)
+      <input id="customMin" type="number" min="1" max="30" value="12" inputmode="numeric">
+    </label>
+    <label>الشكل
+      <select id="orient"><option value="v">طولي 9:16 (شورتس / ريلز)</option><option value="h">عرضي 16:9 (يوتيوب)</option></select>
     </label>
     <label>الصوت
       <select id="voice"><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Aoede</option></select>
@@ -41,6 +50,7 @@
       <select id="theme"><option value="0">بنفسجي</option><option value="1">أزرق</option><option value="2">برتقالي</option><option value="3">أخضر</option></select>
     </label>
   </div>
+  <div id="longWarn" class="warn" hidden></div>
   <button id="go" class="primary">إنشاء الفيديو</button>
   <div id="usage" class="muted"></div>
   <div id="status" class="status" hidden></div>
@@ -62,12 +72,29 @@
 <section id="plans">
   <h2>الباقات</h2>
   <div class="plans">
-    <div class="plan"><h3>مجاني</h3><div class="price">$0</div><ul><li>3 فيديوهات في الشهر</li><li>تحميل ومشاركة</li></ul><button class="pick" data-plan="free">استخدم</button></div>
-    <div class="plan"><h3>Starter</h3><div class="price">$9<small>/شهر</small></div><ul><li>20 فيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="starter">اختر</button></div>
-    <div class="plan best"><h3>Pro</h3><div class="price">$19<small>/شهر</small></div><ul><li>40 فيديو</li><li>6 مقاطع AI قصيرة (قريباً)</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="pro">اختر</button></div>
-    <div class="plan"><h3>Business</h3><div class="price">$39<small>/شهر</small></div><ul><li>100 فيديو</li><li>15 مقطع AI (قريباً)</li><li>كل المنصات + أولوية</li></ul><button class="pick" data-plan="business">اختر</button></div>
+    <div class="plan"><h3>مجاني</h3><div class="price">0 ج.م</div><ul><li>3 فيديوهات في الشهر</li><li>حتى دقيقة للفيديو</li><li>تحميل ومشاركة</li></ul><button class="pick" data-plan="free">استخدم</button></div>
+    <div class="plan"><h3>Starter</h3><div class="price"><span data-price="starter">450</span> ج.م<small>/شهر</small></div><ul><li>20 فيديو</li><li>حتى 5 دقائق للفيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="starter">اشترك</button></div>
+    <div class="plan best"><h3>Pro</h3><div class="price"><span data-price="pro">900</span> ج.م<small>/شهر</small></div><ul><li>40 فيديو</li><li>حتى 10 دقائق للفيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="pro">اشترك</button></div>
+    <div class="plan"><h3>Business</h3><div class="price"><span data-price="business">1900</span> ج.م<small>/شهر</small></div><ul><li>100 فيديو</li><li>حتى 30 دقيقة للفيديو</li><li>كل المنصات + أولوية</li></ul><button class="pick" data-plan="business">اشترك</button></div>
   </div>
-  <p class="muted">نسخة تجريبية: الدفع غير مفعّل بعد. اختيار باقة هنا يغيّر الحد الشهري على جهازك فقط.</p>
+  <p class="muted">الدفع بفودافون كاش (يدوي): اختر باقة، حوّل المبلغ، أدخل بيانات التحويل، وبعد مراجعتنا تتفعل الباقة على جهازك. الباقة الحالية محفوظة على جهازك.</p>
+  <div id="payStatus" class="status" hidden></div>
+</section>
+
+<section id="pay" class="card" hidden>
+  <h2>الدفع بفودافون كاش</h2>
+  <p>الباقة: <b id="payPlan"></b></p>
+  <ol class="steps">
+    <li>حوّل المبلغ بالظبط: <b id="payAmount"></b> ج.م</li>
+    <li>على رقم فودافون كاش: <b id="payNumber" dir="ltr"></b> <button id="copyNum" type="button" class="mini">نسخ</button></li>
+    <li>اكتب كود المرجع ده في ملاحظة التحويل لو أمكن: <b id="payRef" dir="ltr"></b></li>
+    <li>املأ البيانات تحت واضغط "تم التحويل".</li>
+  </ol>
+  <label>رقم الموبايل اللي حوّلت منه <input id="paySender" dir="ltr" inputmode="tel" placeholder="01xxxxxxxxx"></label>
+  <label>رقم العملية (Transaction ID) من رسالة فودافون <input id="payTx" dir="ltr" placeholder="مثال: 1234567890"></label>
+  <button id="paySend" class="primary" type="button">تم التحويل، أرسل للمراجعة</button>
+  <div id="payMsg" class="status" hidden></div>
+  <p class="muted">بعد الإرسال هيفتح واتساب برسالة جاهزة، ابعتها ومعاها لقطة شاشة التحويل (رفع الصورة بيتم من واتساب). التفعيل يدوي من صاحب الموقع.</p>
 </section>
 
 <section id="settings" class="card">

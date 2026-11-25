@@ -14,3 +14,7 @@ video{width:100%;max-width:360px;display:block;margin:12px auto;border-radius:12
 .plan{background:#1b1c36;border-radius:14px;padding:16px;text-align:center}.plan.best{outline:2px solid #7c4dff}
 .price{font-size:2rem;font-weight:700}.price small{font-size:.8rem;color:#9a9ac0}.plan ul{list-style:none;padding:0;font-size:.9rem}
 .pick{width:100%}
+.warn{background:#3b2a05;border:1px solid #b8860b;color:#ffe08a;padding:10px;border-radius:8px;margin:10px 0;font-size:.9rem}
+.steps{padding-inline-start:20px}.steps li{margin:8px 0}.mini{padding:4px 10px;margin:0 6px;font-size:.8rem}
+.status.ok{border:1px solid #2e7d32;color:#9cff9c}.status.pend{border:1px solid #b8860b;color:#ffe08a}.status.bad{border:1px solid #c62828;color:#ff9c9c}
+optgroup{color:#000}

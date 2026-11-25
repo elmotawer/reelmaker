@@ -1,6 +1,12 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const W = 720, H = 1280, FPS = 30;
+let W = 720, H = 1280; const FPS = 30;
+const VF_NUMBER = '01041920904';      // رقم فودافون كاش (مؤقت: يؤكده صاحب الموقع)
+const CONTACT_WA = '201041920904';    // واتساب للتواصل (مؤقت)
+const PAY_API = 'https://sawalef-server.onrender.com';
+const PRICES = { starter: 450, pro: 900, business: 1900 };
+const MAXSEC = { free: 60, starter: 300, pro: 600, business: 1800 };
+const PLAN_NAMES = { free: 'مجاني', starter: 'Starter', pro: 'Pro', business: 'Business' };
 const PLANS = { free: 3, starter: 20, pro: 40, business: 100 };
 const THEMES = [['#4a148c','#d500f9'],['#0d47a1','#00b0ff'],['#bf360c','#ffab00'],['#1b5e20','#76ff03']];
 const DEFAULTS = { mtext: 'gemini-3.8-flash', mtts: 'gemini-3.8-flash-tts' };
@@ -14,7 +20,7 @@ const store = {
 function monthKey() { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); }
 function plan() { return store.get('plan', 'free'); }
 function used() { return +store.get('used-' + monthKey(), 0); }
-function refreshUsage() { $('usage').textContent = `الباقة: ${plan()} | المستخدم هذا الشهر: ${used()} من ${PLANS[plan()]}`; }
+function refreshUsage() { $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${PLANS[plan()]} | أقصى مدة: ${MAXSEC[plan()] / 60} دقيقة`; }
 
 // ---------- settings ----------
 function loadSettings() {
@@ -36,7 +42,7 @@ function doSave(manual) {
   b.addEventListener('click', fire); b.addEventListener('touchend', fire);
   ['gkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const el = $(k); el.addEventListener('input', () => doSave(false)); el.addEventListener('change', () => doSave(false)); el.addEventListener('blur', () => doSave(false)); });
 })();
-document.querySelectorAll('.pick').forEach(b => b.onclick = () => { store.set('plan', b.dataset.plan); refreshUsage(); });
+
 
 function status(t) { const s = $('status'); s.hidden = false; s.textContent = t; }
 
@@ -71,23 +77,38 @@ async function gemini(model, body, fallbacks) {
   }
   throw new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')');
 }
-async function makeScript(idea, tone, scenes) {
-  const key = store.get('gkey', '');
-  if (!key) return demoScript(idea, scenes);
-  const prompt = `اكتب سيناريو فيديو قصير (ريلز/شورتس) بالعربية الفصحى المبسطة أو بلهجة مفهومة للجميع. الفكرة: ${idea}. الأسلوب: ${tone}. ` +
-    `عدد المشاهد: ${scenes}. كل مشهد جملة واحدة قصيرة (8 إلى 14 كلمة). المشهد الأول خطاف قوي يشد المشاهد، والأخير دعوة للمتابعة. ` +
+async function scriptChunk(idea, tone, n, prev, first, total) {
+  const ctxt = prev.length ? ` المشاهد السابقة (لا تكررها وكمّل من بعدها): ${prev.slice(-4).join(' | ')}.` : '';
+  const prompt = `اكتب ${first ? 'سيناريو' : 'تكملة سيناريو'} فيديو بالعربية الفصحى المبسطة أو بلهجة مفهومة للجميع. الفكرة: ${idea}. الأسلوب: ${tone}. ` +
+    `إجمالي مشاهد الفيديو ${total}، المطلوب الآن ${n} مشهدا.${ctxt} كل مشهد جملتان قصيرتان على الأكثر (10 إلى 22 كلمة). ` +
+    (first ? 'المشهد الأول خطاف قوي. ' : 'لا تضف خطافا جديدا. ') + (prev.length + n >= total ? 'المشهد الأخير دعوة للمتابعة. ' : 'لا تختم الفيديو بعد. ') +
     `أرجع JSON فقط بالشكل: {"title":"عنوان قصير","description":"وصف مع 3 هاشتاجات","scenes":["..."]}`;
   const j = await gemini(store.get('mtext', DEFAULTS.mtext), {
     contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' }
   }, TEXT_FALLBACKS);
-  const txt = j.candidates[0].content.parts.map(p => p.text || '').join('');
-  const out = JSON.parse(txt);
+  const out = JSON.parse(j.candidates[0].content.parts.map(p => p.text || '').join(''));
   if (!out.scenes || !out.scenes.length) throw new Error('سيناريو فارغ');
   return out;
 }
+async function makeScript(idea, tone, scenes) {
+  const key = store.get('gkey', '');
+  if (!key) return demoScript(idea, scenes);
+  const CH = 15; let all = [], head = null;
+  while (all.length < scenes) {
+    const n = Math.min(CH, scenes - all.length);
+    status(`جاري كتابة السيناريو... (${all.length} من ${scenes} مشهد)`);
+    let out, tries = 0;
+    for (;;) { try { out = await scriptChunk(idea, tone, n, all, !head, scenes); break; } catch (e) { if (++tries >= 3) throw e; await sleep(3000 * tries); } }
+    if (!head) head = out;
+    all = all.concat(out.scenes.map(String).slice(0, n + 3));
+  }
+  return { title: head.title, description: head.description, scenes: all };
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 function demoScript(idea, n) {
   const base = ['هل تعلم أن فكرتك تستحق فيديو؟', idea, 'ابدأ بخطوة صغيرة اليوم', 'كن مستمرا ولا تتوقف', 'شارك الفيديو مع صديق يحتاجه', 'تابعنا للمزيد من الأفكار'];
-  return { title: idea.slice(0, 60), description: idea + ' #shorts #عربي #أفكار', scenes: base.slice(0, Math.max(3, Math.min(n, base.length))) };
+  const mid = base.slice(1, 5), sc = [base[0]]; while (sc.length < n - 1) sc.push(...mid); sc.length = Math.max(2, n - 1); sc.push(base[5]);
+  return { title: idea.slice(0, 60), description: idea + ' #shorts #عربي #أفكار', scenes: sc };
 }
 async function makeAudio(text, voice, ctx) {
   const key = store.get('gkey', '');
@@ -106,6 +127,24 @@ async function makeAudio(text, voice, ctx) {
   const buf = ctx.createBuffer(1, n, rate), d = buf.getChannelData(0);
   for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; d[i] = v / 32768; }
   return buf;
+}
+
+async function makeAudioLong(scenes, voice, ctx) {
+  const G = 4, bufs = [], bounds = []; let total = 0;
+  const groups = []; for (let i = 0; i < scenes.length; i += G) groups.push(scenes.slice(i, i + G));
+  for (let gi = 0; gi < groups.length; gi++) {
+    status(`جاري توليد الصوت... (${gi + 1} من ${groups.length})`);
+    let buf, tries = 0;
+    for (;;) { try { buf = await makeAudio(groups[gi].join('. '), voice, ctx); break; } catch (e) { if (++tries >= 3) throw e; await sleep(4000 * tries); } }
+    const lens = groups[gi].map(x => x.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
+    lens.forEach(l => { acc += l; bounds.push(total + acc / sum * buf.duration); });
+    total += buf.duration; bufs.push(buf);
+    if (gi < groups.length - 1 && store.get('gkey', '')) await sleep(1500);
+  }
+  const rate = bufs[0].sampleRate, out = ctx.createBuffer(1, bufs.reduce((a, b) => a + Math.round(b.length * rate / b.sampleRate), 0), rate), d = out.getChannelData(0); let off = 0;
+  for (const b of bufs) { const x = b.getChannelData(0); d.set(x, off); off += x.length; }
+  bounds[bounds.length - 1] = out.duration + 0.6;
+  return { buf: out, bounds };
 }
 
 // ---------- canvas drawing ----------
@@ -139,37 +178,43 @@ function pickMime() {
   const c = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return c.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 }
-async function render(scenes, audioBuf, ctxA, theme) {
+async function render(scenes, audioBuf, ctxA, theme, bounds) {
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
-  const dur = audioBuf.duration + 0.6, lens = scenes.map(s => s.length), sum = lens.reduce((a, b) => a + b, 0);
-  let acc = 0; const bounds = lens.map(l => (acc += l) / sum * audioBuf.duration); bounds[bounds.length - 1] = dur;
+  const dur = audioBuf.duration + 0.6;
   const dest = ctxA.createMediaStreamDestination(), src = ctxA.createBufferSource(); src.buffer = audioBuf; src.connect(dest);
   const stream = cv.captureStream(FPS); dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-  const mime = pickMime(), rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 4e6 } : {}), chunks = [];
+  const mime = pickMime(), rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: dur > 150 ? 2.5e6 : 4e6 } : {}), chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const done = new Promise(r => rec.onstop = r);
   rec.start(500); const t0 = ctxA.currentTime + 0.1; src.start(t0); drawFrame(c, scenes, bounds, 0, dur, theme);
-  await new Promise(res => { (function tick() { const t = ctxA.currentTime - t0; if (t >= dur) return res(); drawFrame(c, scenes, bounds, Math.max(0, t), dur, theme); status(`جاري التصوير ${Math.round(100 * t / dur)}%`); requestAnimationFrame(tick); })(); });
+  await new Promise(res => { (function tick() { const t = ctxA.currentTime - t0; if (t >= dur) return res(); drawFrame(c, scenes, bounds, Math.max(0, t), dur, theme); status(`جاري التصوير ${Math.round(100 * t / dur)}% (باقي ${fmt(dur - t)}) لا تقفل الشاشة`); requestAnimationFrame(tick); })(); });
   rec.stop(); await done;
   return new Blob(chunks, { type: (mime || 'video/webm').split(';')[0] });
 }
 
+const fmt = x => { x = Math.max(0, Math.round(x)); return Math.floor(x / 60) + ':' + String(x % 60).padStart(2, '0'); };
 // ---------- main flow ----------
 $('go').onclick = async () => {
   const idea = $('idea').value.trim(); if (!idea) return status('اكتب الفكرة أولا');
   if (used() >= PLANS[plan()]) return status('وصلت للحد الشهري للباقة. اختر باقة أعلى من قسم الباقات.');
+  const secs = getSecs();
+  if (secs > MAXSEC[plan()]) return status(`باقتك (${PLAN_NAMES[plan()]}) تسمح بفيديو حتى ${MAXSEC[plan()] / 60} دقيقة. اختر مدة أقصر أو باقة أعلى.`);
+  const nScenes = secs <= 45 ? Math.round(secs / 5) : Math.ceil(secs / 8);
+  W = $('orient').value === 'h' ? 1280 : 720; H = $('orient').value === 'h' ? 720 : 1280;
   $('go').disabled = true; $('result').hidden = true;
+  let lock = null; try { if (secs > 60 && navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch {}
   try {
-    status('جاري كتابة السيناريو...'); const s = await makeScript(idea, $('tone').value, +$('length').value);
+    status('جاري كتابة السيناريو...'); const s = await makeScript(idea, $('tone').value, nScenes);
     const ctxA = new (window.AudioContext || window.webkitAudioContext)();
-    status('جاري توليد الصوت...'); const audio = await makeAudio(s.scenes.join('. '), $('voice').value, ctxA);
-    blob = await render(s.scenes, audio, ctxA, +$('theme').value);
+    status('جاري توليد الصوت...'); const au = await makeAudioLong(s.scenes, $('voice').value, ctxA);
+    blob = await render(s.scenes, au.buf, ctxA, +$('theme').value, au.bounds);
     if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = URL.createObjectURL(blob);
     $('player').src = blobUrl; $('title').value = s.title; $('desc').value = s.description;
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'; $('download').href = blobUrl; $('download').download = 'reel.' + ext;
     $('result').hidden = false; store.set('used-' + monthKey(), used() + 1); refreshUsage(); status('تم! الفيديو جاهز.');
     window.__lastBlobSize = blob.size;
   } catch (e) { status('خطأ: ' + e.message); }
+  if (lock) try { lock.release(); } catch {}
   $('go').disabled = false;
 };
 $('share').onclick = async () => {
@@ -198,3 +243,61 @@ $('yt').onclick = async () => {
   } catch (e) { status('خطأ: ' + e.message); }
 };
 loadSettings();
+
+// ---------- duration UI ----------
+function getSecs() { const v = $('length').value; return v === 'custom' ? Math.max(1, Math.min(30, +$('customMin').value || 1)) * 60 : +v; }
+function updWarn() {
+  $('customWrap').hidden = $('length').value !== 'custom';
+  const secs = getSecs(), w = $('longWarn');
+  if (secs <= 60) { w.hidden = true; return; }
+  const key = store.get('gkey', '');
+  w.hidden = false;
+  w.textContent = `تنبيه: الفيديو الطويل (${fmt(secs)}) بيتصوّر في وقت حقيقي، يعني هياخد حوالي ${Math.ceil(secs / 60) + Math.ceil(secs / 60 / 3)} دقيقة أو أكتر. سيب الصفحة مفتوحة والشاشة شغالة ولا تغيّر التطبيق.` +
+    (key ? ' الحدود المجانية لجوجل ممكن تبطّئ التوليد وتعمل إعادة محاولة تلقائية.' : ' (بدون مفتاح جوجل هيطلع فيديو تجريبي.)') +
+    (secs > MAXSEC[plan()] ? ` باقتك الحالية تسمح بحتى ${MAXSEC[plan()] / 60} دقيقة فقط.` : '');
+}
+['length', 'customMin'].forEach(i => $(i).addEventListener('input', updWarn)); $('length').addEventListener('change', updWarn);
+$('length').value = '30'; updWarn();
+
+// ---------- Vodafone Cash payment (manual approval) ----------
+let payPlan = null;
+function payRef() { let r = store.get('payref', ''); if (!r) { r = 'RM-' + Math.random().toString(36).slice(2, 8).toUpperCase(); store.set('payref', r); } return r; }
+function showPayStatus(t, cls) { const p = $('payStatus'); p.hidden = !t; p.textContent = t || ''; p.className = 'status ' + (cls || ''); }
+document.querySelectorAll('.pick').forEach(b => b.onclick = () => {
+  const p = b.dataset.plan;
+  if (p === 'free') { store.set('plan', 'free'); refreshUsage(); return; }
+  payPlan = p; $('payPlan').textContent = PLAN_NAMES[p]; $('payAmount').textContent = PRICES[p];
+  $('payNumber').textContent = VF_NUMBER; $('payRef').textContent = payRef(); $('pay').hidden = false; $('payMsg').hidden = true;
+  $('pay').scrollIntoView({ behavior: 'smooth' });
+});
+$('copyNum').onclick = async () => { try { await navigator.clipboard.writeText(VF_NUMBER); $('copyNum').textContent = 'تم النسخ'; } catch { $('copyNum').textContent = VF_NUMBER; } };
+function payMsg(t, cls) { const m = $('payMsg'); m.hidden = false; m.textContent = t; m.className = 'status ' + (cls || ''); }
+$('paySend').onclick = async () => {
+  const sender = $('paySender').value.replace(/\D/g, ''), tx = $('payTx').value.trim();
+  if (!payPlan) return;
+  if (sender.length < 10) return payMsg('اكتب رقم الموبايل اللي حوّلت منه', 'bad');
+  if (tx.length < 4) return payMsg('اكتب رقم العملية من رسالة فودافون', 'bad');
+  const ref = payRef();
+  $('paySend').disabled = true;
+  try {
+    const r = await fetch(PAY_API + '/reel/pay', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ref, plan: payPlan, sender, tx }) });
+    if (!r.ok) throw new Error('server ' + r.status);
+    store.set('pending', JSON.stringify({ ref, plan: payPlan }));
+    payMsg('تم الإرسال. الحالة: قيد المراجعة. ابعت لقطة شاشة التحويل على واتساب وهتتفعل الباقة بعد المراجعة.', 'pend');
+    const text = `طلب اشتراك ReelMaker\nالباقة: ${PLAN_NAMES[payPlan]}\nالمبلغ: ${PRICES[payPlan]} ج.م\nالمرجع: ${ref}\nمن رقم: ${sender}\nرقم العملية: ${tx}`;
+    window.open(`https://wa.me/${CONTACT_WA}?text=${encodeURIComponent(text)}`, '_blank');
+    checkPending();
+  } catch (e) { payMsg('تعذر الإرسال (السيرفر ممكن يكون بيصحى، جرّب بعد دقيقة): ' + e.message, 'bad'); }
+  $('paySend').disabled = false;
+};
+async function checkPending() {
+  let p; try { p = JSON.parse(store.get('pending', 'null')); } catch {} if (!p) return;
+  try {
+    const r = await fetch(PAY_API + '/reel/status?ref=' + encodeURIComponent(p.ref)); if (!r.ok) return;
+    const j = await r.json();
+    if (j.status === 'approved') { store.set('plan', j.plan); store.set('pending', ''); store.set('payref', ''); refreshUsage(); showPayStatus('تم تفعيل باقة ' + PLAN_NAMES[j.plan] + ' ✅', 'ok'); $('pay').hidden = true; }
+    else if (j.status === 'rejected') { store.set('pending', ''); store.set('payref', ''); showPayStatus('تم رفض طلب الدفع. تواصل معنا على واتساب.', 'bad'); }
+    else showPayStatus(`طلب ${PLAN_NAMES[p.plan]} (${p.ref}): قيد المراجعة`, 'pend');
+  } catch {}
+}
+checkPending(); setInterval(checkPending, 60000);
