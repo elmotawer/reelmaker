@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ريل ميكر - من الفكرة لفيديو قصير</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>🎬 ريل ميكر</h1>
+  <nav><a href="#app">الأداة</a><a href="#plans">الباقات</a><a href="#settings">الإعدادات</a></nav>
+</header>
+
+<main>
+<section class="hero">
+  <h2>اكتب فكرتك، واحصل على فيديو قصير بالعربي جاهز للنشر</h2>
+  <p>سيناريو + تعليق صوتي + كتابة على الشاشة، كله يتعمل في متصفحك. ورفع مباشر لليوتيوب.</p>
+</section>
+
+<section id="app" class="card">
+  <label>فكرة الفيديو
+    <textarea id="idea" rows="3" placeholder="مثال: 3 نصائح لزيادة المتابعين على انستجرام"></textarea>
+  </label>
+  <div class="row">
+    <label>الأسلوب
+      <select id="tone">
+        <option value="تحفيزي وحماسي">تحفيزي</option>
+        <option value="تعليمي وبسيط">تعليمي</option>
+        <option value="مضحك وخفيف">كوميدي</option>
+        <option value="إخباري وسريع">إخباري</option>
+      </select>
+    </label>
+    <label>المدة
+      <select id="length"><option value="4">قصير (~20 ث)</option><option value="6" selected>متوسط (~30 ث)</option><option value="9">طويل (~45 ث)</option></select>
+    </label>
+    <label>الصوت
+      <select id="voice"><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Aoede</option></select>
+    </label>
+    <label>الألوان
+      <select id="theme"><option value="0">بنفسجي</option><option value="1">أزرق</option><option value="2">برتقالي</option><option value="3">أخضر</option></select>
+    </label>
+  </div>
+  <button id="go" class="primary">إنشاء الفيديو</button>
+  <div id="usage" class="muted"></div>
+  <div id="status" class="status" hidden></div>
+
+  <div id="result" hidden>
+    <video id="player" controls playsinline></video>
+    <label>العنوان <input id="title"></label>
+    <label>الوصف <textarea id="desc" rows="3"></textarea></label>
+    <div class="row">
+      <a id="download" class="btn" download="reel.webm">⬇️ تحميل الفيديو</a>
+      <button id="share" class="btn" type="button">📤 مشاركة (تيك توك / انستجرام / فيسبوك)</button>
+      <button id="yt" class="btn yt" type="button">▶️ رفع على يوتيوب</button>
+    </div>
+    <p class="muted">تيك توك وانستجرام وفيسبوك: حمّل الفيديو أو شاركه من الموبايل. الرفع المباشر ليهم محتاج موافقة المنصات (قريباً).</p>
+    <div id="ytout"></div>
+  </div>
+</section>
+
+<section id="plans">
+  <h2>الباقات</h2>
+  <div class="plans">
+    <div class="plan"><h3>مجاني</h3><div class="price">$0</div><ul><li>3 فيديوهات في الشهر</li><li>تحميل ومشاركة</li></ul><button class="pick" data-plan="free">استخدم</button></div>
+    <div class="plan"><h3>Starter</h3><div class="price">$9<small>/شهر</small></div><ul><li>20 فيديو</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="starter">اختر</button></div>
+    <div class="plan best"><h3>Pro</h3><div class="price">$19<small>/شهر</small></div><ul><li>40 فيديو</li><li>6 مقاطع AI قصيرة (قريباً)</li><li>رفع على يوتيوب</li></ul><button class="pick" data-plan="pro">اختر</button></div>
+    <div class="plan"><h3>Business</h3><div class="price">$39<small>/شهر</small></div><ul><li>100 فيديو</li><li>15 مقطع AI (قريباً)</li><li>كل المنصات + أولوية</li></ul><button class="pick" data-plan="business">اختر</button></div>
+  </div>
+  <p class="muted">نسخة تجريبية: الدفع غير مفعّل بعد. اختيار باقة هنا يغيّر الحد الشهري على جهازك فقط.</p>
+</section>
+
+<section id="settings" class="card">
+  <h2>الإعدادات</h2>
+  <label>مفتاح Gemini API (مجاني من aistudio.google.com/apikey، يُحفظ على جهازك فقط)
+    <input id="gkey" type="password" dir="ltr" placeholder="AIza...">
+  </label>
+  <label>نموذج النص <input id="mtext" dir="ltr"></label>
+  <label>نموذج الصوت <input id="mtts" dir="ltr"></label>
+  <label>Google OAuth Client ID لرفع يوتيوب <input id="ytid" dir="ltr" placeholder="xxxx.apps.googleusercontent.com"></label>
+  <button id="save" type="button">حفظ</button>
+  <p class="muted">بدون مفتاح Gemini، الأداة تشتغل في وضع تجريبي بسيناريو جاهز وصوت نغمة، عشان تجرب الشكل فقط.</p>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

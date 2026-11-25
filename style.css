@@ -1,0 +1,16 @@
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#0f1020;color:#f1f1f7;line-height:1.6}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:#17182e}
+.top h1{margin:0;font-size:1.3rem}.top a{color:#b9b9ff;margin-inline-start:16px;text-decoration:none}
+main{max-width:860px;margin:auto;padding:16px}.hero{text-align:center;padding:24px 0}
+.card{background:#1b1c36;border-radius:14px;padding:18px;margin:16px 0}
+label{display:block;margin:10px 0;font-size:.9rem;color:#c9c9e6;flex:1;min-width:130px}
+input,textarea,select{width:100%;margin-top:4px;padding:10px;border-radius:8px;border:1px solid #3a3b66;background:#0f1020;color:#fff;font:inherit}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+button,.btn{display:inline-block;padding:10px 16px;border-radius:8px;border:0;background:#3a3b66;color:#fff;font:inherit;cursor:pointer;text-decoration:none;margin:6px 0}
+.primary{background:#7c4dff;width:100%;font-size:1.1rem;padding:14px}.yt{background:#d93025}
+button:disabled{opacity:.5}.muted{color:#9a9ac0;font-size:.85rem}.status{background:#0f1020;padding:10px;border-radius:8px;margin-top:10px}
+video{width:100%;max-width:360px;display:block;margin:12px auto;border-radius:12px;background:#000}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.plan{background:#1b1c36;border-radius:14px;padding:16px;text-align:center}.plan.best{outline:2px solid #7c4dff}
+.price{font-size:2rem;font-weight:700}.price small{font-size:.8rem;color:#9a9ac0}.plan ul{list-style:none;padding:0;font-size:.9rem}
+.pick{width:100%}
