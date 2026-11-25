@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ريل ميكر - من الفكرة لفيديو قصير</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="Expires" content="0">
-<script>(function(){var V='20261125e',p=new URLSearchParams(location.search);if(p.get('v')!==V){p.set('v',V);location.replace(location.pathname+'?'+p.toString()+location.hash);}})();</script>
-<link rel="stylesheet" href="style.css?v=20261125e">
+<script>(function(){var V='20261125f',p=new URLSearchParams(location.search);if(p.get('v')!==V){p.set('v',V);location.replace(location.pathname+'?'+p.toString()+location.hash);}})();</script>
+<link rel="stylesheet" href="style.css?v=20261125f">
 </head>
 <body>
 <header class="top">
@@ -42,11 +42,14 @@
     <label id="customWrap" hidden>عدد الدقائق (1 إلى 30)
       <input id="customMin" type="number" min="1" max="30" value="12" inputmode="numeric">
     </label>
+    <label>اللهجة
+      <select id="dialect"><option value="eg">مصرية</option><option value="ms">فصحى مبسطة</option></select>
+    </label>
     <label>الشكل
       <select id="orient"><option value="v">طولي 9:16 (شورتس / ريلز)</option><option value="h">عرضي 16:9 (يوتيوب)</option></select>
     </label>
     <label>الصوت
-      <select id="voice"><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Aoede</option></select>
+<select id="voice"><optgroup label="أصوات نسائية"><option value="Sulafat">سلافة (دافئ)</option><option value="Kore">كوثر (حازم)</option><option value="Aoede">آية (خفيف)</option><option value="Leda">ليدا (شبابي)</option><option value="Zephyr">زهرة (مشرق)</option><option value="Vindemiatrix">ياسمين (هادئ)</option></optgroup><optgroup label="أصوات رجالية"><option value="Puck">بدر (حيوي)</option><option value="Charon">كريم (رصين)</option><option value="Orus">عمر (قوي)</option><option value="Achird">آدم (ودود)</option><option value="Fenrir">فارس (متحمس)</option><option value="Sadaltager">سامي (خبير)</option></optgroup></select> <button id="prevVoice" type="button" class="mini">🔊 معاينة</button><div id="prevMsg" class="muted" hidden></div>
     </label>
     <label>الألوان
       <select id="theme"><option value="0">بنفسجي</option><option value="1">أزرق</option><option value="2">برتقالي</option><option value="3">أخضر</option></select>
@@ -130,7 +133,7 @@
   <p class="muted">بدون مفتاح Gemini، الأداة تشتغل في وضع تجريبي بسيناريو جاهز وصوت نغمة، عشان تجرب الشكل فقط.</p>
 </section>
 </main>
-<script>window.APP_V="20261125e"</script>
-<script src="app.js?v=20261125e"></script>
+<script>window.APP_V="20261125f"</script>
+<script src="app.js?v=20261125f"></script>
 </body>
 </html>

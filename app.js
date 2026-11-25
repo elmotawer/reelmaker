@@ -9,7 +9,7 @@ const MAXSEC = { free: 60, starter: 300, pro: 600, business: 1800 };
 const PLAN_NAMES = { free: 'مجاني', starter: 'Starter', pro: 'Pro', business: 'Business' };
 const PLANS = { free: 3, starter: 20, pro: 40, business: 100 };
 const THEMES = [['#4a148c','#d500f9'],['#0d47a1','#00b0ff'],['#bf360c','#ffab00'],['#1b5e20','#76ff03']];
-const DEFAULTS = { mtext: 'gemini-3.5-flash-lite', mtts: 'gemini-3.8-flash-tts' };
+const DEFAULTS = { mtext: 'gemini-3.5-flash-lite', mtts: 'gemini-3.8-flash-lite-tts' };
 let blob = null, blobUrl = null;
 
 // ---------- storage (safe if blocked) ----------
@@ -39,7 +39,7 @@ function refreshUsage() {
 function loadSettings() {
   $('gkey').value = store.get('gkey', ''); $('pixkey').value = store.get('pixkey', '');
   $('mtext').value = textModel();
-  $('mtts').value = store.get('mtts', DEFAULTS.mtts);
+  $('mtts').value = ttsModel();
   $('ytid').value = store.get('ytid', '');
   refreshUsage();
 }
@@ -62,12 +62,12 @@ function status(t) { const s = $('status'); s.hidden = false; s.textContent = t;
 
 // ---------- Gemini ----------
 const TEXT_FALLBACKS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'];
-const TTS_FALLBACKS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
+const TTS_FALLBACKS = ['gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-3.8-flash-tts'];
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 let vid = null;
-async function geminiOnce(model, body) {
+async function geminiOnce(model, body, preview) {
   if (paid()) {
-    const r = await fetch(PAY_API + '/reel/gen', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.get('tok', '') }, body: JSON.stringify({ vid, model, body }) });
+    const r = await fetch(PAY_API + '/reel/gen', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + store.get('tok', '') }, body: JSON.stringify({ vid, model, body, preview: !!preview }) });
     if (!r.ok) { const e = new Error('Gemini ' + r.status); e.code = r.status; e.detail = (await r.text()).slice(0, 300); e.proxy = true; throw e; }
     return r.json();
   }
@@ -79,13 +79,13 @@ async function geminiOnce(model, body) {
   return r.json();
 }
 // Retries with backoff, then falls through a list of other models. Shows friendly Arabic progress.
-async function gemini(model, body, fallbacks) {
+async function gemini(model, body, fallbacks, preview) {
   const list = [model].concat((fallbacks || []).filter(m => m !== model));
   let last;
   for (let mi = 0; mi < list.length; mi++) {
     const tries = mi < list.length - 1 ? 2 : 4;
     for (let t = 0; t < tries; t++) {
-      try { return await geminiOnce(list[mi], body); }
+      try { const jj = await geminiOnce(list[mi], body, preview); gemini.lastOk = list[mi]; return jj; }
       catch (e) {
         last = e;
         const busy = !e.code || [429, 500, 502, 503, 504].includes(e.code);
@@ -101,10 +101,11 @@ async function gemini(model, body, fallbacks) {
   if (last && last.code === 429) throw new Error(last.proxy ? 'عدد الطلبات كتير في الدقيقة أو وصلت لحد الخدمة. استنى دقيقة وجرّب تاني.' : 'وصل مفتاح Gemini لحد الاستخدام المجاني (حصة في الدقيقة أو اليوم، Google هي اللي بتحددها). استنى شوية أو استخدم مفتاح من حساب تاني.');
   throw new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')');
 }
-const normScene = x => typeof x === 'string' ? { t: x, img: '', e: '✨' } : { t: String(x.t || x.text || ''), img: String(x.img || x.image || ''), e: String(x.e || x.emoji || '✨').slice(0, 4) };
+const normScene = x => typeof x === 'string' ? { t: x, img: '', e: '✨' } : { t: String(x.t || x.text || '').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim(), img: String(x.img || x.image || ''), e: String(x.e || x.emoji || '✨').slice(0, 4) };
 async function scriptChunk(idea, tone, n, prev, first, total) {
   const ctxt = prev.length ? ` المشاهد السابقة (لا تكررها وكمّل من بعدها): ${prev.slice(-4).map(x => x.t).join(' | ')}.` : '';
-  const prompt = `اكتب ${first ? 'سيناريو' : 'تكملة سيناريو'} فيديو بالعربية الفصحى المبسطة أو بلهجة مفهومة للجميع. الفكرة: ${idea}. الأسلوب: ${tone}. ` +
+  const dia = $('dialect').value === 'eg' ? 'بالعامية المصرية الطبيعية (زي ما الناس بتتكلم فعلا، مش فصحى)' : 'بالعربية الفصحى المبسطة بأسلوب كلام شفهي طبيعي';
+  const prompt = `اكتب ${first ? 'سيناريو' : 'تكملة سيناريو'} فيديو ${dia}. اكتب كأنك بتتكلم مع صاحبك، بجمل قصيرة، وبعلامات ترقيم واضحة (فواصل وعلامات تعجب واستفهام) عشان القارئ الصوتي يوقف ويتنفس طبيعي، واكتب الأرقام بالحروف ولا تستخدم إيموجي أو رموز داخل نص المشهد. الفكرة: ${idea}. الأسلوب: ${tone}. ` +
     `إجمالي مشاهد الفيديو ${total}، المطلوب الآن ${n} مشهدا.${ctxt} كل مشهد جملتان قصيرتان على الأكثر (10 إلى 22 كلمة). ` +
     (first ? 'المشهد الأول خطاف قوي. ' : 'لا تضف خطافا جديدا. ') + (prev.length + n >= total ? 'المشهد الأخير دعوة للمتابعة. ' : 'لا تختم الفيديو بعد. ') +
     `لكل مشهد أضف "img": وصف بصري قصير بالإنجليزية (2 إلى 4 كلمات مفتاحية بسيطة وملموسة مثل: sunrise mountains، لا تستخدم أفكارا مجردة) للبحث عن صورة فوتوغرافية مناسبة للمشهد، و"e": إيموجي واحد مناسب. ` +
@@ -138,43 +139,87 @@ function demoScript(idea, n) {
   while (idx.length < n - 1) idx.push(...mid); idx.length = Math.max(2, n - 1); idx.push(5);
   return { title: idea.slice(0, 60), description: idea + ' #shorts #عربي #أفكار', scenes: idx.map(i => base[i]), imgs: idx.map(() => idea), emojis: idx.map(i => em[i]) };
 }
-async function makeAudio(text, voice, ctx) {
-  if (!hasKey()) { // demo: soft tone, 2.3s per scene-ish
-    const sec = Math.max(8, text.length / 12), sr = 24000, buf = ctx.createBuffer(1, sr * sec, sr), d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = 0.05 * Math.sin(2 * Math.PI * 330 * i / sr) * (Math.sin(i / sr * 3) > 0 ? 1 : 0.2);
-    return buf;
-  }
-  const j = await gemini(store.get('mtts', DEFAULTS.mtts), {
-    contents: [{ parts: [{ text: 'اقرأ بحماس وبوضوح: ' + text }] }],
-    generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
-  }, TTS_FALLBACKS);
+const VOICES = {
+  f: [['Sulafat', 'سلافة (دافئ)'], ['Kore', 'كوثر (حازم)'], ['Aoede', 'آية (خفيف)'], ['Leda', 'ليدا (شبابي)'], ['Zephyr', 'زهرة (مشرق)'], ['Vindemiatrix', 'ياسمين (هادئ)']],
+  m: [['Puck', 'بدر (حيوي)'], ['Charon', 'كريم (رصين)'], ['Orus', 'عمر (قوي)'], ['Achird', 'آدم (ودود)'], ['Fenrir', 'فارس (متحمس)'], ['Sadaltager', 'سامي (خبير)']]
+};
+const TONE_EMO = { 'تحفيزي وحماسي': 'motivating, energetic and uplifting', 'تعليمي وبسيط': 'clear, calm and friendly, like a good teacher', 'مضحك وخفيف': 'playful, light and funny, with a smile in the voice', 'إخباري وسريع': 'crisp, confident, news-like and quick' };
+function stylePrompt() {
+  const d = $('dialect').value === 'eg' ? 'Egyptian Arabic (colloquial)' : 'simple Modern Standard Arabic with a natural spoken feel';
+  return `Speak in natural, conversational ${d}, like a real person telling a story to a friend. Tone: ${TONE_EMO[$('tone').value] || 'warm and engaging'}. Brisk, natural everyday pace (not slow), with real breaths and tiny pauses only at commas and sentence ends, varied intonation, no robotic reading. Say only the text below:`;
+}
+const OLD_TTS = ['gemini-3.8-flash-tts', 'gemini-2.5-flash-preview-tts'];
+function ttsModel() { const m = store.get('mtts', DEFAULTS.mtts); return OLD_TTS.includes(m) ? DEFAULTS.mtts : m; }
+let ttsPref = null;
+async function ttsRaw(text, voice, preview) {
+  const body = { contents: [{ parts: [{ text: stylePrompt() + '\n\n' + text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } };
+  const j = await gemini(ttsPref || ttsModel(), body, TTS_FALLBACKS, preview);
+  if (gemini.lastOk) ttsPref = gemini.lastOk; // keep the same voice model for every chunk of a video
   const part = j.candidates[0].content.parts.find(p => p.inlineData);
+  if (!part) throw new Error('لم يرجع صوت');
   const bin = atob(part.inlineData.data), n = bin.length >> 1;
   const rate = +((part.inlineData.mimeType.match(/rate=(\d+)/) || [])[1] || 24000);
-  const buf = ctx.createBuffer(1, n, rate), d = buf.getChannelData(0);
+  const d = new Float32Array(n);
   for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; d[i] = v / 32768; }
-  return buf;
+  return { d, rate };
 }
-
+// trim leading/trailing silence, normalize loudness (RMS) with a peak limit, short fades
+function polish(d, rate) {
+  const th = 0.012; let a = 0, b = d.length - 1;
+  while (a < b && Math.abs(d[a]) < th) a++; while (b > a && Math.abs(d[b]) < th) b--;
+  const pad = Math.round(rate * 0.09); a = Math.max(0, a - pad); b = Math.min(d.length - 1, b + pad);
+  const x = d.slice(a, b + 1); let sq = 0, n = 0, pk = 0;
+  for (let i = 0; i < x.length; i++) { const v = Math.abs(x[i]); if (v > th) { sq += v * v; n++; } if (v > pk) pk = v; }
+  const rms = Math.sqrt(sq / Math.max(1, n)) || 0.1; let g = 0.11 / rms; g = Math.min(g, 0.95 / Math.max(pk, 0.01), 6);
+  const f = Math.round(rate * 0.02);
+  for (let i = 0; i < x.length; i++) { let m = g; if (i < f) m *= i / f; else if (x.length - i < f) m *= (x.length - i) / f; x[i] *= m; }
+  return x;
+}
 async function makeAudioLong(scenes, voice, ctx) {
-  const G = 4, bufs = [], bounds = []; let total = 0;
+  if (!hasKey()) { // demo tone
+    const sec = Math.max(8, scenes.join(' ').length / 12), sr = 24000, buf = ctx.createBuffer(1, sr * sec, sr), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = 0.05 * Math.sin(2 * Math.PI * 330 * i / sr) * (Math.sin(i / sr * 3) > 0 ? 1 : 0.2);
+    const lens = scenes.map(x => x.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
+    return { buf, bounds: lens.map((l, i) => i === lens.length - 1 ? buf.duration + 0.6 : (acc += l) / sum * buf.duration) };
+  }
+  ttsPref = null;
+  const G = 4, parts = [], bounds = []; let total = 0, rate = 24000;
   const groups = []; for (let i = 0; i < scenes.length; i += G) groups.push(scenes.slice(i, i + G));
   for (let gi = 0; gi < groups.length; gi++) {
     status(`جاري توليد الصوت... (${gi + 1} من ${groups.length})`);
-    let buf, tries = 0;
-    for (;;) { try { buf = await makeAudio(groups[gi].join('. '), voice, ctx); break; } catch (e) { if (++tries >= 3) throw e; await sleep(4000 * tries); } }
-    const lens = groups[gi].map(x => x.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
-    lens.forEach(l => { acc += l; bounds.push(total + acc / sum * buf.duration); });
-    total += buf.duration; bufs.push(buf);
-    if (gi < groups.length - 1 && hasKey()) await sleep(paid() ? 4500 : 1500);
+    let r, tries = 0;
+    const gtext = groups[gi].join(' '), words = gtext.split(/\s+/).length, maxDur = words / 2.3 * 1.6 + 2; let rep = 0;
+    for (;;) {
+      try { r = await ttsRaw(gtext, voice); if (r.d.length / r.rate > maxDur && ++rep < 3) { status('الصوت طلع بتكرار، بعيد توليده...'); await sleep(1500); continue; } break; }
+      catch (e) { if (++tries >= 3) throw e; await sleep(4000 * tries); }
+    }
+    rate = r.rate; const x = polish(r.d, r.rate), dur = x.length / rate;
+    const lens = groups[gi].map(t => t.length), sum = lens.reduce((a, b) => a + b, 0); let acc = 0;
+    lens.forEach(l => { acc += l; bounds.push(total + acc / sum * dur); });
+    total += dur; parts.push(x);
+    if (gi < groups.length - 1) await sleep(paid() ? 4500 : 1500);
   }
-  const rate = bufs[0].sampleRate, out = ctx.createBuffer(1, bufs.reduce((a, b) => a + Math.round(b.length * rate / b.sampleRate), 0), rate), d = out.getChannelData(0); let off = 0;
-  for (const b of bufs) { const x = b.getChannelData(0); d.set(x, off); off += x.length; }
+  const out = ctx.createBuffer(1, parts.reduce((a, p) => a + p.length, 0), rate), d = out.getChannelData(0); let off = 0;
+  for (const p of parts) { d.set(p, off); off += p.length; }
   bounds[bounds.length - 1] = out.duration + 0.6;
   return { buf: out, bounds };
 }
+let prevAudio = null;
+async function previewVoice() {
+  const b = $('prevVoice'); b.disabled = true; const old = b.textContent; b.textContent = '... جاري التحميل';
+  try {
+    if (!hasKey()) throw new Error('أضف مفتاح Gemini في الإعدادات الأول (أو سجّل دخول بباقة مدفوعة) عشان تسمع الصوت.');
+    const txt = $('dialect').value === 'eg' ? 'أهلا بيك! دي تجربة سريعة للصوت، وعلى فكرة، الفيديو هيطلع حلو أوي.' : 'أهلاً بك! هذه تجربة سريعة للصوت، وسيكون الفيديو رائعاً بإذن الله.';
+    ttsPref = null; const r = await ttsRaw(txt, $('voice').value, true), x = polish(r.d, r.rate);
+    const ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.resume) await ac.resume();
+    const buf = ac.createBuffer(1, x.length, r.rate); buf.getChannelData(0).set(x);
+    if (prevAudio) try { prevAudio.stop(); } catch {}
+    const src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination); src.start(); prevAudio = src;
+    $('prevMsg').hidden = true;
+  } catch (e) { const m = $('prevMsg'); m.hidden = false; m.textContent = 'تعذر تشغيل المعاينة: ' + e.message; }
+  b.disabled = false; b.textContent = old;
+}
 
-// ---------- canvas drawing ----------
 // ---------- images (free: Pollinations AI, Wikimedia fallback, gradient+emoji last) ----------
 async function fetchImg(url, ms) {
   const ac = new AbortController(), to = setTimeout(() => ac.abort(), ms);
@@ -364,7 +409,7 @@ $('go').onclick = async () => {
     const st = { idea, scenes: s.scenes, imgs: s.imgs, emojis: s.emojis, theme: +$('theme').value, bitmaps: null, bounds: [] };
     const imgP = loadImages(st).catch(() => { st.bitmaps = st.scenes.map(() => null); });
     status('جاري توليد الصوت...'); const au = await makeAudioLong(s.scenes, $('voice').value, ctxA);
-    st.bounds = au.bounds; await imgP;
+    st.bounds = au.bounds; window.__au = au; await imgP;
     if (!st.bitmaps) st.bitmaps = st.scenes.map(() => null);
     if (ctxA.state === 'suspended') await Promise.race([ctxA.resume(), sleep(3000)]);
     blob = await render(st, au.buf, ctxA, $('music').checked);
@@ -501,3 +546,5 @@ if (/[?&]reset=1/.test(location.search)) {
   refreshUsage(); statusScrolled = false; status('✅ تم تصفير عداد الفيديوهات المجانية: ' + used() + ' من ' + limit());
   try { const q = new URLSearchParams(location.search); q.delete('reset'); history.replaceState(null, '', location.pathname + '?' + q.toString()); } catch {}
 }
+
+$('prevVoice').onclick = previewVoice;
