@@ -27,7 +27,7 @@ function limit() { return paid() ? me.limit : PLANS.free; }
 function maxSecs() { return paid() ? me.maxSecs : MAXSEC.free; }
 function refreshUsage() {
   $('usage').textContent = `الباقة: ${PLAN_NAMES[plan()]} | المستخدم هذا الشهر: ${used()} من ${limit()} | أقصى مدة: ${maxSecs() / 60} دقيقة`;
-  $('gkeyWrap').hidden = paid(); $('pexWrap').hidden = paid();
+  $('gkeyWrap').hidden = paid(); $('pixWrap').hidden = paid();
   $('acctIn').hidden = !me; $('acctOut').hidden = !!me;
   if (me) $('acctInfo').textContent = `${me.email} | الباقة: ${PLAN_NAMES[plan()]}` + (paid() ? ` | تنتهي ${new Date(me.planUntil).toLocaleDateString('ar-EG')}` : '');
   if (typeof updWarn === 'function') updWarn();
@@ -35,14 +35,14 @@ function refreshUsage() {
 
 // ---------- settings ----------
 function loadSettings() {
-  $('gkey').value = store.get('gkey', ''); $('pexkey').value = store.get('pexkey', '');
+  $('gkey').value = store.get('gkey', ''); $('pixkey').value = store.get('pixkey', '');
   $('mtext').value = store.get('mtext', DEFAULTS.mtext);
   $('mtts').value = store.get('mtts', DEFAULTS.mtts);
   $('ytid').value = store.get('ytid', '');
   refreshUsage();
 }
 function doSave(manual) {
-  ['gkey', 'pexkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const v = $(k).value.trim(); if (v) store.set(k, v); else { try { localStorage.removeItem(k); } catch {} } });
+  ['gkey', 'pixkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const v = $(k).value.trim(); if (v) store.set(k, v); else { try { localStorage.removeItem(k); } catch {} } });
   const ok = $('saved');
   if (ok) { ok.textContent = manual ? '✅ تم الحفظ' : '✅ تم الحفظ تلقائيا'; ok.hidden = false; clearTimeout(doSave.t); doSave.t = setTimeout(() => { ok.hidden = true; }, 4000); }
   if (manual) status('تم الحفظ');
@@ -51,7 +51,7 @@ function doSave(manual) {
   const b = $('save'); let last = 0;
   const fire = e => { if (e && e.cancelable) e.preventDefault(); const n = Date.now(); if (n - last < 400) return; last = n; doSave(true); };
   b.addEventListener('click', fire); b.addEventListener('touchend', fire);
-  ['gkey', 'pexkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const el = $(k); el.addEventListener('input', () => doSave(false)); el.addEventListener('change', () => doSave(false)); el.addEventListener('blur', () => doSave(false)); });
+  ['gkey', 'pixkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const el = $(k); el.addEventListener('input', () => doSave(false)); el.addEventListener('change', () => doSave(false)); el.addEventListener('blur', () => doSave(false)); });
 })();
 
 
@@ -182,15 +182,20 @@ async function fetchImg(url, ms) {
   } finally { clearTimeout(to); }
 }
 const BAD_TITLE = /beer|wine|alcohol|vodka|whisk|cocktail|bikini|nude|naked|bar |pub |cigarette|smok|drunk|map|diagram|flag|logo|coat of arms|chart|graph|icon|symbol|poster|stamp|seal|portrait of|signature|scan|manuscript|\.svg/i;
-async function pexelsUrls(kw) {
-  const o = W > H ? 'landscape' : 'portrait';
+const pxCache = {};
+async function pixabayUrls(kw) {
+  const o = W > H ? 'landscape' : 'portrait', ck = o + kw.toLowerCase();
+  if (pxCache[ck]) return pxCache[ck]; // Pixabay terms: cache results (24h); kept for this session
+  let urls = [];
   if (paid()) {
-    const r = await fetch(PAY_API + '/reel/pexels?o=' + o + '&q=' + encodeURIComponent(kw), { headers: authH() });
-    if (!r.ok) return []; return ((await r.json()).photos || []).map(p => p.src);
+    const r = await fetch(PAY_API + '/reel/pixabay?o=' + o + '&q=' + encodeURIComponent(kw), { headers: authH() });
+    if (r.ok) urls = ((await r.json()).photos || []).map(p => p.src);
+  } else {
+    const k = store.get('pixkey', ''); if (!k) return [];
+    const r = await fetch(`https://pixabay.com/api/?key=${encodeURIComponent(k)}&image_type=photo&safesearch=true&per_page=8&min_width=600&orientation=${o === 'landscape' ? 'horizontal' : 'vertical'}&q=${encodeURIComponent(kw)}`);
+    if (r.ok) urls = ((await r.json()).hits || []).map(h => h.largeImageURL || h.webformatURL).filter(Boolean);
   }
-  const k = store.get('pexkey', ''); if (!k) return [];
-  const r = await fetch(`https://api.pexels.com/v1/search?per_page=6&orientation=${o}&query=${encodeURIComponent(kw)}`, { headers: { Authorization: k } });
-  if (!r.ok) return []; return ((await r.json()).photos || []).map(p => p.src && p.src.large).filter(Boolean);
+  if (urls.length) pxCache[ck] = urls; return urls;
 }
 async function wikiUrls(kw) {
   const r = await (await fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(kw + ' filetype:bitmap')}&gsrnamespace=6&gsrlimit=12&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=1000&format=json&origin=*`)).json();
@@ -200,7 +205,7 @@ async function wikiUrls(kw) {
 async function getImage(kw, seed) {
   kw = String(kw || '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 5).join(' ');
   const queries = [kw, kw.split(' ').slice(0, 2).join(' '), kw.split(' ')[0]].filter((q, i, a) => q && a.indexOf(q) === i);
-  for (const src of [pexelsUrls, wikiUrls]) {
+  for (const src of [pixabayUrls, wikiUrls]) {
     for (const q of queries) {
       try {
         const urls = await src(q);
