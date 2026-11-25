@@ -8,7 +8,7 @@ let blob = null, blobUrl = null;
 
 // ---------- storage (safe if blocked) ----------
 const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
+  get(k, d) { try { const v = localStorage.getItem(k); return (v === null || v === '') ? d : v; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} }
 };
 function monthKey() { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); }
@@ -24,7 +24,18 @@ function loadSettings() {
   $('ytid').value = store.get('ytid', '');
   refreshUsage();
 }
-$('save').onclick = () => { ['gkey', 'mtext', 'mtts', 'ytid'].forEach(k => store.set(k, $(k).value.trim())); status('تم الحفظ'); };
+function doSave(manual) {
+  ['gkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const v = $(k).value.trim(); if (v) store.set(k, v); else { try { localStorage.removeItem(k); } catch {} } });
+  const ok = $('saved');
+  if (ok) { ok.textContent = manual ? '✅ تم الحفظ' : '✅ تم الحفظ تلقائيا'; ok.hidden = false; clearTimeout(doSave.t); doSave.t = setTimeout(() => { ok.hidden = true; }, 4000); }
+  if (manual) status('تم الحفظ');
+}
+(function () {
+  const b = $('save'); let last = 0;
+  const fire = e => { if (e && e.cancelable) e.preventDefault(); const n = Date.now(); if (n - last < 400) return; last = n; doSave(true); };
+  b.addEventListener('click', fire); b.addEventListener('touchend', fire);
+  ['gkey', 'mtext', 'mtts', 'ytid'].forEach(k => { const el = $(k); el.addEventListener('input', () => doSave(false)); el.addEventListener('change', () => doSave(false)); el.addEventListener('blur', () => doSave(false)); });
+})();
 document.querySelectorAll('.pick').forEach(b => b.onclick = () => { store.set('plan', b.dataset.plan); refreshUsage(); });
 
 function status(t) { const s = $('status'); s.hidden = false; s.textContent = t; }
