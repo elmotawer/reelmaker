@@ -102,7 +102,7 @@ async function makeScript(idea, tone, scenes) {
     if (!head) head = out;
     all = all.concat(out.scenes.map(String).slice(0, n + 3));
   }
-  return { title: head.title, description: head.description, scenes: all };
+  return { title: head.title, description: head.description, scenes: all.slice(0, scenes) };
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function demoScript(idea, n) {
