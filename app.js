@@ -9,7 +9,7 @@ const MAXSEC = { free: 60, starter: 300, pro: 600, business: 1800 };
 const PLAN_NAMES = { free: 'مجاني', starter: 'Starter', pro: 'Pro', business: 'Business' };
 const PLANS = { free: 3, starter: 20, pro: 40, business: 100 };
 const THEMES = [['#4a148c','#d500f9'],['#0d47a1','#00b0ff'],['#bf360c','#ffab00'],['#1b5e20','#76ff03']];
-const DEFAULTS = { mtext: 'gemini-3.8-flash', mtts: 'gemini-3.8-flash-tts' };
+const DEFAULTS = { mtext: 'gemini-3.5-flash-lite', mtts: 'gemini-3.8-flash-tts' };
 let blob = null, blobUrl = null;
 
 // ---------- storage (safe if blocked) ----------
@@ -17,6 +17,8 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return (v === null || v === '') ? d : v; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} }
 };
+const OLD_TEXT = ['gemini-3.8-flash', 'gemini-3.6-flash'];
+function textModel() { const m = store.get('mtext', DEFAULTS.mtext); return OLD_TEXT.includes(m) ? DEFAULTS.mtext : m; }
 function monthKey() { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); }
 let me = null;
 function plan() { return me ? me.plan : 'free'; }
@@ -36,7 +38,7 @@ function refreshUsage() {
 // ---------- settings ----------
 function loadSettings() {
   $('gkey').value = store.get('gkey', ''); $('pixkey').value = store.get('pixkey', '');
-  $('mtext').value = store.get('mtext', DEFAULTS.mtext);
+  $('mtext').value = textModel();
   $('mtts').value = store.get('mtts', DEFAULTS.mtts);
   $('ytid').value = store.get('ytid', '');
   refreshUsage();
@@ -59,7 +61,7 @@ let statusScrolled = true;
 function status(t) { const s = $('status'); s.hidden = false; s.textContent = t; if (!statusScrolled) { statusScrolled = true; try { s.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {} } }
 
 // ---------- Gemini ----------
-const TEXT_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+const TEXT_FALLBACKS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'];
 const TTS_FALLBACKS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 let vid = null;
@@ -106,7 +108,7 @@ async function scriptChunk(idea, tone, n, prev, first, total) {
     (first ? 'المشهد الأول خطاف قوي. ' : 'لا تضف خطافا جديدا. ') + (prev.length + n >= total ? 'المشهد الأخير دعوة للمتابعة. ' : 'لا تختم الفيديو بعد. ') +
     `لكل مشهد أضف "img": وصف بصري قصير بالإنجليزية (2 إلى 4 كلمات مفتاحية بسيطة وملموسة مثل: sunrise mountains، لا تستخدم أفكارا مجردة) للبحث عن صورة فوتوغرافية مناسبة للمشهد، و"e": إيموجي واحد مناسب. ` +
     `أرجع JSON فقط بالشكل: {"title":"عنوان قصير","description":"وصف مع 3 هاشتاجات","scenes":[{"t":"نص المشهد","img":"sunrise mountains","e":"🌅"}]}`;
-  const j = await gemini(store.get('mtext', DEFAULTS.mtext), {
+  const j = await gemini(textModel(), {
     contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' }
   }, TEXT_FALLBACKS);
   const out = JSON.parse(j.candidates[0].content.parts.map(p => p.text || '').join(''));
