@@ -98,6 +98,7 @@ async function gemini(model, body, fallbacks) {
     }
     if (mi < list.length - 1) status('النموذج مشغول، بجرّب نموذج تاني...');
   }
+  if (last && last.code === 429) throw new Error(last.proxy ? 'عدد الطلبات كتير في الدقيقة أو وصلت لحد الخدمة. استنى دقيقة وجرّب تاني.' : 'وصل مفتاح Gemini لحد الاستخدام المجاني (حصة في الدقيقة أو اليوم، Google هي اللي بتحددها). استنى شوية أو استخدم مفتاح من حساب تاني.');
   throw new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')');
 }
 const normScene = x => typeof x === 'string' ? { t: x, img: '', e: '✨' } : { t: String(x.t || x.text || ''), img: String(x.img || x.image || ''), e: String(x.e || x.emoji || '✨').slice(0, 4) };
@@ -325,7 +326,7 @@ $('go').onclick = async () => {
   statusScrolled = false; status('تم الضغط... جاري التجهيز');
   if (!ctxA) return status('خطأ: متصفحك لا يدعم الصوت المطلوب. جرّب Safari أو Chrome حديث.');
   const idea = $('idea').value.trim(); if (!idea) return status('اكتب الفكرة أولا');
-  if (used() >= limit()) return status('وصلت للحد الشهري للباقة. اختر باقة أعلى من قسم الباقات.');
+  if (used() >= limit()) { status(`وصلت للحد الشهري لباقة ${PLAN_NAMES[plan()]}: ${used()} من ${limit()} فيديو.` + (paid() ? ' الحد بيتجدد أول الشهر.' : ' (العداد على جهازك)')); $('resetWrap').hidden = paid(); return; }
   const secs = getSecs();
   if (secs > maxSecs()) return status(`باقتك (${PLAN_NAMES[plan()]}) تسمح بفيديو حتى ${maxSecs() / 60} دقيقة. اختر مدة أقصر أو باقة أعلى.`);
   $('go').disabled = true; $('result').hidden = true;
@@ -474,3 +475,7 @@ async function checkPending() {
   } catch {}
 }
 loadMe().then(checkPending); setInterval(checkPending, 60000);
+
+// free counter is stored only on this device: let the owner reset it for testing
+$('resetUsage').onclick = () => { store.set('used-' + monthKey(), 0); $('resetWrap').hidden = true; refreshUsage(); status('تم تصفير عداد الفيديوهات المجانية على جهازك.'); };
+if (/[?&]reset=1/.test(location.search)) { store.set('used-' + monthKey(), 0); refreshUsage(); }
