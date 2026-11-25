@@ -80,7 +80,8 @@ async function gemini(model, body, fallbacks) {
   const list = [model].concat((fallbacks || []).filter(m => m !== model));
   let last;
   for (let mi = 0; mi < list.length; mi++) {
-    for (let t = 0; t < 4; t++) {
+    const tries = mi < list.length - 1 ? 2 : 4;
+    for (let t = 0; t < tries; t++) {
       try { return await geminiOnce(list[mi], body); }
       catch (e) {
         last = e;
@@ -89,7 +90,7 @@ async function gemini(model, body, fallbacks) {
         if (e.proxy && e.code === 503 && /key_missing/.test(e.detail)) throw new Error('الخدمة غير جاهزة بعد، جرّب لاحقا.');
         if (!e.proxy && (e.code === 401 || e.code === 403) || (!e.proxy && e.code === 400 && /API key/i.test(e.detail || ''))) throw new Error('مفتاح Gemini غير صالح أو غير مفعّل. راجع الإعدادات.');
         if (!busy) break; // bad/unknown model: try the next one right away
-        if (t < 3) { status('السيرفر مزدحم، بحاول تاني... (' + (t + 2) + '/4)'); await sleepMs(1500 * Math.pow(2, t)); }
+        if (t < tries - 1) { status('السيرفر مزدحم، بحاول تاني... (' + (t + 2) + '/' + tries + ')'); await sleepMs(1500 * Math.pow(2, t)); }
       }
     }
     if (mi < list.length - 1) status('النموذج مشغول، بجرّب نموذج تاني...');
