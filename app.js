@@ -41,13 +41,35 @@ document.querySelectorAll('.pick').forEach(b => b.onclick = () => { store.set('p
 function status(t) { const s = $('status'); s.hidden = false; s.textContent = t; }
 
 // ---------- Gemini ----------
-async function gemini(model, body) {
+const TEXT_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+const TTS_FALLBACKS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+async function geminiOnce(model, body) {
   const key = store.get('gkey', '');
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body)
   });
-  if (!r.ok) throw new Error('Gemini ' + r.status + ': ' + (await r.text()).slice(0, 300));
+  if (!r.ok) { const e = new Error('Gemini ' + r.status); e.code = r.status; e.detail = (await r.text()).slice(0, 300); throw e; }
   return r.json();
+}
+// Retries with backoff, then falls through a list of other models. Shows friendly Arabic progress.
+async function gemini(model, body, fallbacks) {
+  const list = [model].concat((fallbacks || []).filter(m => m !== model));
+  let last;
+  for (let mi = 0; mi < list.length; mi++) {
+    for (let t = 0; t < 4; t++) {
+      try { return await geminiOnce(list[mi], body); }
+      catch (e) {
+        last = e;
+        const busy = !e.code || [429, 500, 502, 503, 504].includes(e.code);
+        if (e.code === 401 || e.code === 403 || (e.code === 400 && /API key/i.test(e.detail || ''))) throw new Error('مفتاح Gemini غير صالح أو غير مفعّل. راجع الإعدادات.');
+        if (!busy) break; // bad/unknown model: try the next one right away
+        if (t < 3) { status('السيرفر مزدحم، بحاول تاني... (' + (t + 2) + '/4)'); await sleepMs(1500 * Math.pow(2, t)); }
+      }
+    }
+    if (mi < list.length - 1) status('النموذج مشغول، بجرّب نموذج تاني...');
+  }
+  throw new Error('السيرفر مزدحم دلوقتي ومقدرتش أكمل. جرّب كمان دقيقة. (' + ((last && last.message) || '') + ')');
 }
 async function makeScript(idea, tone, scenes) {
   const key = store.get('gkey', '');
@@ -57,7 +79,7 @@ async function makeScript(idea, tone, scenes) {
     `أرجع JSON فقط بالشكل: {"title":"عنوان قصير","description":"وصف مع 3 هاشتاجات","scenes":["..."]}`;
   const j = await gemini(store.get('mtext', DEFAULTS.mtext), {
     contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' }
-  });
+  }, TEXT_FALLBACKS);
   const txt = j.candidates[0].content.parts.map(p => p.text || '').join('');
   const out = JSON.parse(txt);
   if (!out.scenes || !out.scenes.length) throw new Error('سيناريو فارغ');
@@ -77,7 +99,7 @@ async function makeAudio(text, voice, ctx) {
   const j = await gemini(store.get('mtts', DEFAULTS.mtts), {
     contents: [{ parts: [{ text: 'اقرأ بحماس وبوضوح: ' + text }] }],
     generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
-  });
+  }, TTS_FALLBACKS);
   const part = j.candidates[0].content.parts.find(p => p.inlineData);
   const bin = atob(part.inlineData.data), n = bin.length >> 1;
   const rate = +((part.inlineData.mimeType.match(/rate=(\d+)/) || [])[1] || 24000);
